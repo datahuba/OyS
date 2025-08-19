@@ -1,0 +1,38 @@
+# Archivo .gitignore para el Backend
+
+# Dependencias de Node.js
+# Se reconstruyen con 'npm install'
+node_modules/
+
+# Archivos de build (si usas TypeScript o un bundler)
+dist/
+
+# Logs generados por el servidor
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Archivos de Entorno (¡CRÍTICO!)
+# Contiene secretos y configuraciones que no deben ir al repositorio.
+.env
+.env.*
+
+# Archivos temporales o subidos por usuarios
+# Estos no deben versionarse. En producción, se recomienda usar un
+# servicio de almacenamiento externo como AWS S3 o Cloudinary.
+uploads/
+
+# Reportes de cobertura de tests
+coverage/
+.nyc_output/
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Configuración de IDEs
+.vscode/
+.idea/
