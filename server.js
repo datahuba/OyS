@@ -42,9 +42,67 @@ const genAI = new GoogleGenerativeAI(GOOGLE_AI_STUDIO_API_KEY);
 // INICIALIZA EL MODELO GENERATIVO AQUÍ, JUNTO AL DE EMBEDDING
 const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
 const generativeModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" }); // Usamos este para la extracción
+//------------------------------------
+// --- INICIO: LÓGICA DE DETECCIÓN POR EMBEDDINGS ---
 
+const COMPATIBILITY_TRIGGER_PHRASE = "Quiero realizar una compatibilización de documentos";
+
+const SIMILARITY_THRESHOLD = 0.8; 
+
+let compatibilityTriggerEmbedding;
+
+(async () => {
+    try {
+        console.log("Pre-calculando embedding para la frase de activación...");
+        const result = await embeddingModel.embedContent(COMPATIBILITY_TRIGGER_PHRASE);
+        compatibilityTriggerEmbedding = result.embedding.values;
+        console.log("Embedding para la frase de activación calculado exitosamente.");
+    } catch (error) {
+        console.error("Error crítico: no se pudo pre-calcular el embedding de activación.", error);
+
+    }
+})();
+//------------------------------------
 const vectorStore = {};
 const upload = multer({ dest: 'uploads/' });
+
+
+//================================================================
+// FUNCIÓN SIMPLIFICADA QUE ENVÍA UN MENSAJE DE CONFIRMACIÓN AL CHAT
+//================================================================
+const handleCompatibilityRequest = async (userMessage, chat, res) => {
+    
+    // 1. Mensaje para tu consola del servidor (para que sepas que funcionó por detrás)
+    console.log(`✅ ¡Gatillo de compatibilización detectado en el chat [${chat._id}]!`);
+
+    // 2. Este es el mensaje de confirmación que el usuario verá en la interfaz del chat.
+    const botText = "Gatillo de 'compatibilización' detectado y capturado exitosamente.";
+
+    try {
+        // 3. Preparamos la actualización para la base de datos.
+        //    Añadimos el mensaje original del usuario y la respuesta de confirmación del bot.
+        const updatePayload = {
+            $push: {
+                messages: {
+                    $each: [
+                        { sender: 'user', text: userMessage },
+                        { sender: 'ai', text: botText }
+                    ]
+                }
+            }
+        };
+
+        // 4. Guardamos la conversación en la base de datos.
+        const updatedChat = await Chat.findByIdAndUpdate(chat._id, updatePayload, { new: true });
+
+        // 5. Enviamos la respuesta al frontend para que actualice la pantalla del chat.
+        res.status(200).json({ updatedChat });
+
+    } catch (dbError) {
+        console.error("Error al guardar el mensaje de confirmación del gatillo:", dbError);
+        res.status(500).json({ message: "Error al procesar la activación del gatillo." });
+    }
+};
 
 
 // FUNCIÓN CORREGIDA USANDO EL SDK DE GOOGLE AI
@@ -207,6 +265,7 @@ app.post('/api/process-document', protect, upload.single('file'), async (req, re
         let systemMessageText = `Archivo "${req.file.originalname}" procesado y añadido al contexto del chat.`;
         
         // --- ESTA ES LA PARTE CRÍTICA ---
+        //hola
         // Nos aseguramos de usar $push en el campo correcto: 'documentIds' (en plural)
         const updatedChat = await Chat.findByIdAndUpdate(req.body.chatId, {
             $push: { 
@@ -237,6 +296,25 @@ app.post('/api/chat', protect, async (req, res) => {
 
     try {
         const currentChat = await Chat.findById(chatId);
+
+        const userQuery = conversationHistory[conversationHistory.length - 1].parts[0].text;
+
+        if (compatibilityTriggerEmbedding) {
+            const userQueryEmbedding = await getEmbedding(userQuery);
+            const similarity = cosineSimilarity(userQueryEmbedding, compatibilityTriggerEmbedding);
+            
+            console.log(`Similitud con la intención de "compatibilización": ${similarity.toFixed(4)}`);
+
+            if (similarity > SIMILARITY_THRESHOLD) {
+                // --- LLAMADA MODIFICADA ---
+                // Le pasamos el control total a nuestra función.
+                // El 'return' detiene la ejecución de esta ruta aquí.
+                return handleCompatibilityRequest(userQuery, currentChat, res);
+            }
+            else {console.log("La consulta no es sobre compatibilización, procediendo con el flujo normal.");}
+        }
+
+
         if (!currentChat) {
             return res.status(404).json({ message: "Chat no encontrado." });
         }
