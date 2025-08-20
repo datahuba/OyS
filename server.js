@@ -40,8 +40,8 @@ const GOOGLE_AI_STUDIO_API_KEY = process.env.GOOGLE_AI_STUDIO_API_KEY;
 const genAI = new GoogleGenerativeAI(GOOGLE_AI_STUDIO_API_KEY);
 
 // INICIALIZA EL MODELO GENERATIVO AQUÍ, JUNTO AL DE EMBEDDING
-const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
-const generativeModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" }); // Usamos este para la extracción
+const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
+const generativeModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" }); // Usamos este para la extracción
 
 const vectorStore = {};
 const upload = multer({ dest: 'uploads/' });
