@@ -73,22 +73,37 @@ async function extractTextWithGemini(filePath, mimetype) {
         throw new Error('La API de Gemini no pudo procesar el archivo.');
     }
 }
+
+const supportedTypes = {
+    'application/pdf': 'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
+    'application/msword': 'application/msword', // DOC (Word antiguo)
+    'application/vnd.oasis.opendocument.text': 'application/vnd.oasis.opendocument.text', // ODT (OpenOffice)
+    'text/plain': 'text/plain',
+    'text/markdown': 'text/markdown',
+    'text/html': 'text/html',
+    'text/css': 'text/css',
+    'text/javascript': 'application/javascript',
+    'application/json': 'application/json',
+    'text/xml': 'application/xml',
+    'text/csv': 'text/csv',
+    'application/rtf': 'application/rtf' // Rich Text Format
+    // Puedes añadir más tipos de texto plano aquí
+};
+
 const extractTextFromFile = async (file) => {
     const filePath = file.path;
     const mimetype = file.mimetype;
     let text = '';
 
     // Lista de tipos de archivo que enviaremos a Gemini
-    const supportedTypes = [
-        'application/pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'text/plain'
-    ];
-
-    if (supportedTypes.includes(mimetype)) {
-        console.log(`Extrayendo texto de ${mimetype} con Gemini...`);
-        text = await extractTextWithGemini(filePath, mimetype);
+    if (Object.keys(supportedTypes).includes(clientMimeType)) {
+        // Usa el MIME type validado para la API
+        const apiMimeType = supportedTypes[clientMimeType];
+        console.log(`Extrayendo texto de ${clientMimeType} con Gemini (usando ${apiMimeType})...`);
+        text = await extractTextWithGemini(filePath, apiMimeType);
     } else {
+        console.error(`Tipo de archivo no soportado: ${clientMimeType}`);
         throw new Error('Tipo de archivo no soportado.');
     }
     
