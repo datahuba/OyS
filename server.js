@@ -78,35 +78,46 @@ async function extractTextWithGemini(filePath, mimetype) {
 
 // CÓDIGO CORREGIDO Y LISTO PARA USAR
 
-const supportedTypes = {
-    'application/pdf': 'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
-    'application/msword': 'application/msword', // DOC (Word antiguo)
-    'application/vnd.oasis.opendocument.text': 'application/vnd.oasis.opendocument.text', // ODT (OpenOffice)
-    'text/plain': 'text/plain',
-    'text/markdown': 'text/markdown',
-    'text/html': 'text/html',
-    'text/css': 'text/css',
-    'text/javascript': 'application/javascript',
-    'application/json': 'application/json',
-    'text/xml': 'application/xml',
-    'text/csv': 'text/csv',
-    'application/rtf': 'application/rtf' // Rich Text Format
+const supportedClientTypes = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+    'application/msword', // .doc
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+    'application/vnd.ms-excel', // .xls
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+    'application/vnd.ms-powerpoint', // .ppt
+    'text/plain', // .txt
+    'text/csv', // .csv
+    'image/png',
+    'image/jpeg',
+    'image/webp',
+    'image/gif'
+];
+const geminiMimeTypeMapper = {
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'application/msword',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'application/vnd.ms-powerpoint'
 };
-
 const extractTextFromFile = async (file) => {
     const filePath = file.path;
-    const mimetype = file.mimetype; // La variable correcta
+    const clientMimeType = file.mimetype; // El tipo de archivo real que subió el usuario
     let text = '';
 
-    // Usamos 'mimetype' en toda la lógica
-    if (Object.keys(supportedTypes).includes(mimetype)) {
-        const apiMimeType = supportedTypes[mimetype];
-        console.log(`Extrayendo texto de ${mimetype} con Gemini (usando ${apiMimeType})...`);
+    // 3. Primero, validamos si el archivo es de un tipo que hemos decidido soportar.
+    if (supportedClientTypes.includes(clientMimeType)) {
+        
+        // 4. Decidimos qué MIME type enviaremos a la API de Gemini.
+        // Buscamos en nuestro traductor. Si no hay una traducción, usamos el tipo original (ideal para PDF, TXT, imágenes).
+        const apiMimeType = geminiMimeTypeMapper[clientMimeType] || clientMimeType;
+
+        console.log(`Archivo recibido: ${clientMimeType}. Enviando a Gemini como: ${apiMimeType}...`);
+        
+        // 5. Llamamos a la función de extracción con el tipo de archivo correcto para la API.
         text = await extractTextWithGemini(filePath, apiMimeType);
+
     } else {
-        // El error de "Tipo de archivo no soportado" ahora funcionará correctamente
-        console.error(`Tipo de archivo no soportado: ${mimetype}`);
+        // Si el tipo no está en nuestra lista, lo rechazamos.
+        console.error(`Tipo de archivo no soportado: ${clientMimeType}`);
         throw new Error('Tipo de archivo no soportado.');
     }
     
