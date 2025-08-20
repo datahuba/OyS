@@ -74,6 +74,8 @@ async function extractTextWithGemini(filePath, mimetype) {
     }
 }
 
+// CÓDIGO CORREGIDO Y LISTO PARA USAR
+
 const supportedTypes = {
     'application/pdf': 'application/pdf',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
@@ -88,22 +90,21 @@ const supportedTypes = {
     'text/xml': 'application/xml',
     'text/csv': 'text/csv',
     'application/rtf': 'application/rtf' // Rich Text Format
-    // Puedes añadir más tipos de texto plano aquí
 };
 
 const extractTextFromFile = async (file) => {
     const filePath = file.path;
-    const mimetype = file.mimetype;
+    const mimetype = file.mimetype; // La variable correcta
     let text = '';
 
-    // Lista de tipos de archivo que enviaremos a Gemini
-    if (Object.keys(supportedTypes).includes(clientMimeType)) {
-        // Usa el MIME type validado para la API
-        const apiMimeType = supportedTypes[clientMimeType];
-        console.log(`Extrayendo texto de ${clientMimeType} con Gemini (usando ${apiMimeType})...`);
+    // Usamos 'mimetype' en toda la lógica
+    if (Object.keys(supportedTypes).includes(mimetype)) {
+        const apiMimeType = supportedTypes[mimetype];
+        console.log(`Extrayendo texto de ${mimetype} con Gemini (usando ${apiMimeType})...`);
         text = await extractTextWithGemini(filePath, apiMimeType);
     } else {
-        console.error(`Tipo de archivo no soportado: ${clientMimeType}`);
+        // El error de "Tipo de archivo no soportado" ahora funcionará correctamente
+        console.error(`Tipo de archivo no soportado: ${mimetype}`);
         throw new Error('Tipo de archivo no soportado.');
     }
     
