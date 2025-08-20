@@ -68,9 +68,11 @@ async function extractTextWithGemini(filePath, mimetype) {
         const text = response.text();
         return text;
     } catch (error) {
-        // 3. El SDK proporciona un manejo de errores más claro.
-        console.error('Error al contactar la API de Gemini para extracción de texto:', error);
-        throw new Error('La API de Gemini no pudo procesar el archivo.');
+    // ESTA LÍNEA ES LA CLAVE DE TODO
+    console.error('Error detallado de la API de Gemini:', error); 
+    
+    throw new Error('La API de Gemini no pudo procesar el archivo.');
+
     }
 }
 
