@@ -191,11 +191,8 @@ const supportedClientTypes = [
     'image/webp',
     'image/gif'
 ];
-const geminiMimeTypeMapper = {
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'application/msword',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'application/vnd.ms-excel',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'application/vnd.ms-powerpoint'
-};
+const geminiMimeTypeMapper = {};
+
 const extractTextFromFile = async (file) => {
     const filePath = file.path;
     const clientMimeType = file.mimetype; // El tipo de archivo real que subió el usuario
