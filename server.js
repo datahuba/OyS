@@ -6,7 +6,7 @@ const fs =require('fs');
 const multer = require('multer');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { Pinecone } = require('@pinecone-database/pinecone'); // <-- CORRECCIÓN: Importar Pinecone
-
+const mammoth = require("mammoth");
 // Importaciones de nuestro proyecto
 const { protect } = require('./middleware/authMiddleware');
 const userRoutes = require('./routes/userRoutes');
@@ -178,42 +178,43 @@ async function extractTextWithGemini(filePath, mimetype) {
 
 const supportedClientTypes = [
     'application/pdf',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
-    'application/msword', // .doc
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-    'application/vnd.ms-excel', // .xls
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
-    'application/vnd.ms-powerpoint', // .ppt
-    'text/plain', // .txt
-    'text/csv', // .csv
-    'image/png',
-    'image/jpeg',
-    'image/webp',
-    'image/gif'
+    'text/plain'
 ];
 const geminiMimeTypeMapper = {};
 
 const extractTextFromFile = async (file) => {
     const filePath = file.path;
-    const clientMimeType = file.mimetype; // El tipo de archivo real que subió el usuario
+    const clientMimeType = file.mimetype;
     let text = '';
 
-    // 3. Primero, validamos si el archivo es de un tipo que hemos decidido soportar.
-    if (supportedClientTypes.includes(clientMimeType)) {
-        
-        // 4. Decidimos qué MIME type enviaremos a la API de Gemini.
-        // Buscamos en nuestro traductor. Si no hay una traducción, usamos el tipo original (ideal para PDF, TXT, imágenes).
-        const apiMimeType = geminiMimeTypeMapper[clientMimeType] || clientMimeType;
+    // Lógica para decidir qué herramienta de extracción usar
 
-        console.log(`Archivo recibido: ${clientMimeType}. Enviando a Gemini como: ${apiMimeType}...`);
+    // CASO 1: El archivo es un .docx
+    if (clientMimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
         
-        // 5. Llamamos a la función de extracción con el tipo de archivo correcto para la API.
-        text = await extractTextWithGemini(filePath, apiMimeType);
+        console.log("Archivo DOCX detectado. Usando 'mammoth' para extracción local...");
+        try {
+            // Usamos mammoth para convertir el .docx a texto plano
+            const result = await mammoth.extractRawText({ path: filePath });
+            text = result.value;
+            if (!text || !text.trim()) {
+                throw new Error('Mammoth no pudo extraer texto del archivo .docx.');
+            }
+        } catch (mammothError) {
+            console.error("Error con Mammoth al procesar .docx:", mammothError);
+            throw new Error('No se pudo procesar el archivo de Word.');
+        }
 
+    // CASO 2: Es un PDF o un archivo de texto plano (soportados por Gemini)
+    } else if (clientMimeType === 'application/pdf' || clientMimeType === 'text/plain') {
+        
+        console.log(`Archivo ${clientMimeType} detectado. Usando Gemini para extracción...`);
+        text = await extractTextWithGemini(filePath, clientMimeType);
+
+    // CASO 3: El tipo de archivo no está soportado
     } else {
-        // Si el tipo no está en nuestra lista, lo rechazamos.
         console.error(`Tipo de archivo no soportado: ${clientMimeType}`);
-        throw new Error('Tipo de archivo no soportado.');
+        throw new Error('Tipo de archivo no soportado. Por favor, sube un .docx, .pdf o .txt');
     }
     
     return text;
