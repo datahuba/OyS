@@ -1,16 +1,5 @@
 const mongoose = require('mongoose');
 
-// ========================================================================
-// 1. CENTRO DE CONFIGURACIÓN DE LÍMITES
-// Para cambiar la cantidad máxima, solo tienes que editar los números aquí.
-// Object.freeze asegura que estos valores no se modifiquen en otra parte.
-// ========================================================================
-const DOCUMENT_LIMITS = Object.freeze({
-  COMPATIBILIZACION: 5,
-  CONSOLIDADO_FACULTADES: 20,
-  CONSOLIDADO_ADMINISTRATIVO: 1,
-  MISCELLANEOUS: 10 
-});
 
 
 // ========================================================================
@@ -64,34 +53,18 @@ const chatSchema = new mongoose.Schema({
   compatibilizacion: {
     type: [documentDetailSchema],
     default: [],
-    validate: {
-      validator: v => v.length <= DOCUMENT_LIMITS.COMPATIBILIZACION,
-      message: `Se ha excedido el límite de ${DOCUMENT_LIMITS.COMPATIBILIZACION} documentos para 'Compatibilización'.`
-    }
   },
   consolidadoFacultades: {
     type: [documentDetailSchema],
     default: [],
-    validate: {
-      validator: v => v.length <= DOCUMENT_LIMITS.CONSOLIDADO_FACULTADES,
-      message: `Se ha excedido el límite de ${DOCUMENT_LIMITS.CONSOLIDADO_FACULTADES} documentos para 'Consolidado Facultades'.`
-    }
   },
   consolidadoAdministrativo: {
     type: [documentDetailSchema],
     default: [],
-    validate: {
-      validator: v => v.length <= DOCUMENT_LIMITS.CONSOLIDADO_ADMINISTRATIVO,
-      message: `Se ha excedido el límite de ${DOCUMENT_LIMITS.CONSOLIDADO_ADMINISTRATIVO} documentos para 'Consolidado Administrativo'.`
-    }
   },
   miscellaneous: {
     type: [documentDetailSchema],
     default: [],
-    validate: {
-      validator: v => v.length <= DOCUMENT_LIMITS.MISCELLANEOUS,
-      message: `Se ha excedido el límite de ${DOCUMENT_LIMITS.MISCELLANEOUS} documentos para 'Misceláneos'.`
-    }
   },
 
   // --- RELACIÓN CON EL USUARIO ---

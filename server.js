@@ -49,23 +49,23 @@ const SIMILARITY_THRESHOLD = 0.8;
 const CONTEXT_TRIGGERS = [
     {
         contextName: 'compatibilizacion',
-        triggerPhrase: 'Quiero empezar el proceso de compatibilización de documentos',
-        responseMessage: 'Entendido. A partir de ahora, nos enfocaremos en los documentos de "Compatibilización". ¿En qué te puedo ayudar con ellos?'
+        triggerPhrase: 'compatibilización de formularios',
+        responseMessage: 'Cambiando el contexto a "Compatibilización".'
     },
     {
         contextName: 'consolidadoFacultades',
-        triggerPhrase: 'Necesito trabajar con el consolidado de facultades',
-        responseMessage: 'Claro. Cambiando el contexto a "Consolidado Facultades". ¿Qué necesitas consultar?'
+        triggerPhrase: 'consolidado de facultades',
+        responseMessage: 'Cambiando el contexto a "Consolidado de Facultades".'
     },
     {
         contextName: 'consolidadoAdministrativo',
-        triggerPhrase: 'Voy a revisar el consolidado administrativo',
-        responseMessage: 'Perfecto. Contexto cambiado a "Consolidado Administrativo". Estoy listo para tus preguntas.'
+        triggerPhrase: 'consolidado de administrativos',
+        responseMessage: 'Cambiando el contexto a "Consolidado de Administrativos".'
     },
     {
         contextName: 'miscellaneous',
-        triggerPhrase: 'Gracias, hemos terminado con este proceso por ahora',
-        responseMessage: 'De acuerdo. Volvemos al contexto general de "Misceláneos".'
+        triggerPhrase: 'terminadar proceso',
+        responseMessage: 'Volviendo al contexto general del chat.'
     }
 ];
 let triggerEmbeddings = {};
