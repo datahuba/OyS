@@ -2,12 +2,10 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-const axios = require('axios');
-const fs = require('fs');
+const fs =require('fs');
 const multer = require('multer');
-const pdf = require('pdf-parse');
-const mammoth = require("mammoth");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { Pinecone } = require('@pinecone-database/pinecone'); // <-- CORRECCIÓN: Importar Pinecone
 
 // Importaciones de nuestro proyecto
 const { protect } = require('./middleware/authMiddleware');
@@ -27,85 +25,127 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB conectado exitosamente.'))
   .catch(err => console.error('Error al conectar a MongoDB:', err));
 
+// --- INICIALIZACIÓN DE SERVICIOS DE IA Y DBs ---
+
+// Modelos de Google AI
+const GOOGLE_AI_STUDIO_API_KEY = process.env.GOOGLE_AI_STUDIO_API_KEY;
+const genAI = new GoogleGenerativeAI(GOOGLE_AI_STUDIO_API_KEY);
+const embeddingModel = genAI.getGenerativeModel({ model: "embedding-001" });
+const generativeModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+// <-- CORRECCIÓN: Inicializar Pinecone
+const pinecone = new Pinecone({
+    apiKey: process.env.PINECONE_API_KEY,
+});
+const pineconeIndex = pinecone.index('chat-rag'); 
+console.log("Conectado y listo para usar el índice de Pinecone: 'chat-rag'.");
+
+
 // --- MONTAR RUTAS DE USUARIO ---
 app.use('/api/users', userRoutes);
 
-// --- LÓGICA DE RAG Y CONSTANTES ---
-
-const GOOGLE_AI_STUDIO_URL = process.env.GOOGLE_AI_STUDIO_URL;
-
-
-
-const GOOGLE_AI_STUDIO_API_KEY = process.env.GOOGLE_AI_STUDIO_API_KEY;
-const genAI = new GoogleGenerativeAI(GOOGLE_AI_STUDIO_API_KEY);
-
-// INICIALIZA EL MODELO GENERATIVO AQUÍ, JUNTO AL DE EMBEDDING
-const embeddingModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
-const generativeModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" }); // Usamos este para la extracción
-//------------------------------------
-// --- INICIO: LÓGICA DE DETECCIÓN POR EMBEDDINGS ---
-
-const COMPATIBILITY_TRIGGER_PHRASE = "Quiero realizar una compatibilización de documentos";
-
-const SIMILARITY_THRESHOLD = 0.8; 
-
-let compatibilityTriggerEmbedding;
-
+// --- LÓGICA DE DETECCIÓN DE CONTEXTO POR EMBEDDINGS ---
+const SIMILARITY_THRESHOLD = 0.8;
+const CONTEXT_TRIGGERS = [
+    {
+        contextName: 'compatibilizacion',
+        triggerPhrase: 'Quiero empezar el proceso de compatibilización de documentos',
+        responseMessage: 'Entendido. A partir de ahora, nos enfocaremos en los documentos de "Compatibilización". ¿En qué te puedo ayudar con ellos?'
+    },
+    {
+        contextName: 'consolidadoFacultades',
+        triggerPhrase: 'Necesito trabajar con el consolidado de facultades',
+        responseMessage: 'Claro. Cambiando el contexto a "Consolidado Facultades". ¿Qué necesitas consultar?'
+    },
+    {
+        contextName: 'consolidadoAdministrativo',
+        triggerPhrase: 'Voy a revisar el consolidado administrativo',
+        responseMessage: 'Perfecto. Contexto cambiado a "Consolidado Administrativo". Estoy listo para tus preguntas.'
+    },
+    {
+        contextName: 'miscellaneous',
+        triggerPhrase: 'Gracias, hemos terminado con este proceso por ahora',
+        responseMessage: 'De acuerdo. Volvemos al contexto general de "Misceláneos".'
+    }
+];
+let triggerEmbeddings = {};
 (async () => {
     try {
-        console.log("Pre-calculando embedding para la frase de activación...");
-        const result = await embeddingModel.embedContent(COMPATIBILITY_TRIGGER_PHRASE);
-        compatibilityTriggerEmbedding = result.embedding.values;
-        console.log("Embedding para la frase de activación calculado exitosamente.");
+        console.log("Pre-calculando embeddings para las frases de activación de contexto...");
+        for (const trigger of CONTEXT_TRIGGERS) {
+            const result = await embeddingModel.embedContent(trigger.triggerPhrase);
+            triggerEmbeddings[trigger.contextName] = {
+                embedding: result.embedding.values,
+                responseMessage: trigger.responseMessage
+            };
+        }
+        console.log("Embeddings de contexto calculados exitosamente.");
     } catch (error) {
-        console.error("Error crítico: no se pudo pre-calcular el embedding de activación.", error);
-
+        console.error("Error crítico: no se pudo pre-calcular los embeddings de activación.", error);
     }
 })();
-//------------------------------------
-const vectorStore = {};
+
 const upload = multer({ dest: 'uploads/' });
 
+// --- SUBPROCESOS Y FUNCIONES AUXILIARES ---
 
-//================================================================
-// FUNCIÓN SIMPLIFICADA QUE ENVÍA UN MENSAJE DE CONFIRMACIÓN AL CHAT
-//================================================================
-const handleCompatibilityRequest = async (userMessage, chat, res) => {
-    
-    // 1. Mensaje para tu consola del servidor (para que sepas que funcionó por detrás)
-    console.log(`✅ ¡Gatillo de compatibilización detectado en el chat [${chat._id}]!`);
+async function detectAndHandleContextSwitch(chat, userQuery, res) {
+    const userQueryEmbedding = await getEmbedding(userQuery);
+    for (const contextName in triggerEmbeddings) {
+        const trigger = triggerEmbeddings[contextName];
+        const similarity = cosineSimilarity(userQueryEmbedding, trigger.embedding);
+        if (similarity > SIMILARITY_THRESHOLD && chat.activeContext !== contextName) {
+            try {
+                console.log(`✅ Intención detectada en [${chat._id}]: Cambiar contexto a -> ${contextName}`);
+                const updatedChat = await Chat.findByIdAndUpdate(chat._id, {
+                    activeContext: contextName,
+                    $push: { messages: { $each: [
+                        { sender: 'user', text: userQuery },
+                        { sender: 'ai', text: trigger.responseMessage }
+                    ]}}
+                }, { new: true });
 
-    // 2. Este es el mensaje de confirmación que el usuario verá en la interfaz del chat.
-    const botText = "Gatillo de 'compatibilización' detectado y capturado exitosamente.";
-
-    try {
-        // 3. Preparamos la actualización para la base de datos.
-        //    Añadimos el mensaje original del usuario y la respuesta de confirmación del bot.
-        const updatePayload = {
-            $push: {
-                messages: {
-                    $each: [
-                        { sender: 'user', text: userMessage },
-                        { sender: 'ai', text: botText }
-                    ]
-                }
+                res.status(200).json({ updatedChat });
+                return true;
+            } catch (dbError) {
+                console.error("Error al cambiar el contexto del chat:", dbError);
+                res.status(500).json({ message: "Error al procesar el cambio de contexto." });
+                return true;
             }
-        };
+        }
+    }
+    return false;
+}
 
-        // 4. Guardamos la conversación en la base de datos.
-        const updatedChat = await Chat.findByIdAndUpdate(chat._id, updatePayload, { new: true });
+function getDocumentsForActiveContext(chat) {
+    const contextKey = chat.activeContext;
+    if (chat[contextKey] && Array.isArray(chat[contextKey])) {
+        return chat[contextKey].map(doc => doc.documentId);
+    }
+    return [];
+}
 
-        // 5. Enviamos la respuesta al frontend para que actualice la pantalla del chat.
-        res.status(200).json({ updatedChat });
 
-    } catch (dbError) {
-        console.error("Error al guardar el mensaje de confirmación del gatillo:", dbError);
-        res.status(500).json({ message: "Error al procesar la activación del gatillo." });
+const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, topK = 5) => {
+    if (!documentIds || documentIds.length === 0) return [];
+    try {
+        const queryResponse = await pineconeIndex.query({
+            topK,
+            vector: queryEmbedding,
+            filter: { documentId: { "$in": documentIds } },
+            includeMetadata: true,
+        });
+        if (queryResponse.matches?.length) {
+            return queryResponse.matches.map(match => match.metadata.chunkText);
+        }
+        return [];
+    } catch (error) {
+        console.error("[Pinecone] Error al realizar la búsqueda:", error);
+        return [];
     }
 };
 
-
-// FUNCIÓN CORREGIDA USANDO EL SDK DE GOOGLE AI
+// --- OTRAS FUNCIONES AUXILIARES
 async function extractTextWithGemini(filePath, mimetype) {
     const fileBuffer = fs.readFileSync(filePath);
 
@@ -181,31 +221,12 @@ const extractTextFromFile = async (file) => {
     
     return text;
 };
-
 const getEmbedding = async (text) => { const result = await embeddingModel.embedContent(text); return result.embedding.values; };
 const chunkDocument = (text, chunkSize = 1000, overlap = 200) => { const chunks = []; for (let i = 0; i < text.length; i += chunkSize - overlap) { chunks.push(text.substring(i, i + chunkSize)); } return chunks; };
 const cosineSimilarity = (vecA, vecB) => { let dotProduct = 0, magA = 0, magB = 0; for(let i=0;i<vecA.length;i++){ dotProduct += vecA[i]*vecB[i]; magA += vecA[i]*vecA[i]; magB += vecB[i]*vecB[i]; } magA = Math.sqrt(magA); magB = Math.sqrt(magB); if(magA===0||magB===0)return 0; return dotProduct/(magA*magB); };
-const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, topK = 5) => {
-    if (!documentIds || documentIds.length === 0) return [];
 
-    let allScoredChunks = [];
 
-    for (const docId of documentIds) {
-        if (vectorStore[docId]) {
-            const scoredChunks = vectorStore[docId].map(chunk => ({
-                chunkText: chunk.chunkText,
-                similarity: cosineSimilarity(queryEmbedding, chunk.embedding)
-            }));
-            allScoredChunks.push(...scoredChunks);
-        }
-    }
-
-    allScoredChunks.sort((a, b) => b.similarity - a.similarity);
-
-    return allScoredChunks.slice(0, topK).map(sc => sc.chunkText);
-};
-
-// --- RUTAS DE CHAT (PROTEGIDAS) ---
+// --- RUTAS DE LA API ---
 
 app.get('/api/chats', protect, async (req, res) => {
     try {
@@ -242,49 +263,50 @@ app.delete('/api/chats/:id', protect, async (req, res) => {
     } catch (error) { res.status(500).json({ message: "Error interno al eliminar el chat." }); }
 });
 
-// REEMPLAZA TU app.post('/api/process-document',...) EXISTENTE CON ESTO:
-
 app.post('/api/process-document', protect, upload.single('file'), async (req, res) => {
-    if (!req.file || !req.body.chatId) {
-        return res.status(400).json({ message: 'Falta archivo o ID del chat.' });
+    const { chatId, documentType } = req.body;
+    if (!req.file || !chatId || !documentType) {
+        return res.status(400).json({ message: 'Falta archivo, ID del chat o tipo de documento.' });
+    }
+    const allowedTypes = ['compatibilizacion', 'consolidadoFacultades', 'consolidadoAdministrativo', 'miscellaneous'];
+    if (!allowedTypes.includes(documentType)) {
+        return res.status(400).json({ message: 'Tipo de documento inválido.' });
     }
     
     try {
         const text = await extractTextFromFile(req.file);
-
-        if (!text || !text.trim()) {
-            throw new Error('No se pudo extraer texto del documento.');
-        }
+        if (!text || !text.trim()) throw new Error('No se pudo extraer texto del documento.');
         
-        const documentId = `doc_${req.body.chatId}_${Date.now()}`;
+        const documentId = `doc_${chatId}_${Date.now()}`;
         const chunks = chunkDocument(text);
-        vectorStore[documentId] = await Promise.all(
-            chunks.map(async (chunk) => ({ chunkText: chunk, embedding: await getEmbedding(chunk) }))
-        );
-
-        let systemMessageText = `Archivo "${req.file.originalname}" procesado y añadido al contexto del chat.`;
         
-        // --- ESTA ES LA PARTE CRÍTICA ---
-        //hola
-        // Nos aseguramos de usar $push en el campo correcto: 'documentIds' (en plural)
-        const updatedChat = await Chat.findByIdAndUpdate(req.body.chatId, {
+        const vectorsToUpsert = await Promise.all(
+            chunks.map(async (chunk, index) => ({
+                id: `${documentId}_chunk_${index}`,
+                values: await getEmbedding(chunk),
+                metadata: { documentId, chunkText: chunk },
+            }))
+        );
+        
+        await pineconeIndex.upsert(vectorsToUpsert);
+        console.log(`[Pinecone] Se han guardado ${vectorsToUpsert.length} chunks para el documento ${documentId}.`);
+
+        const newDocumentData = { documentId, originalName: req.file.originalname, chunkCount: chunks.length };
+        
+        const updatedChat = await Chat.findByIdAndUpdate(chatId, {
             $push: { 
-                documentIds: documentId, 
-                messages: { sender: 'bot', text: systemMessageText }
+                [documentType]: newDocumentData,
+                messages: { sender: 'bot', text: `Archivo "${req.file.originalname}" procesado y añadido a '${documentType}'.` }
             }
-        }, { new: true });
+        }, { new: true, runValidators: true });
 
         res.status(200).json({ updatedChat, documentId });
 
     } catch (error) {
-        // --- AÑADIMOS UN LOG PARA VER EL ERROR EXACTO EN EL SERVIDOR ---
         console.error('[BACKEND] Error procesando documento:', error); 
         res.status(500).json({ message: 'Error al procesar el archivo.', details: error.message });
-
     } finally {
-        if (req.file && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path);
-        }
+        if (req.file?.path) fs.unlinkSync(req.file.path);
     }
 });
 
@@ -296,69 +318,57 @@ app.post('/api/chat', protect, async (req, res) => {
 
     try {
         const currentChat = await Chat.findById(chatId);
-
-        const userQuery = conversationHistory[conversationHistory.length - 1].parts[0].text;
-
-        if (compatibilityTriggerEmbedding) {
-            const userQueryEmbedding = await getEmbedding(userQuery);
-            const similarity = cosineSimilarity(userQueryEmbedding, compatibilityTriggerEmbedding);
-            
-            console.log(`Similitud con la intención de "compatibilización": ${similarity.toFixed(4)}`);
-
-            if (similarity > SIMILARITY_THRESHOLD) {
-                // --- LLAMADA MODIFICADA ---
-                // Le pasamos el control total a nuestra función.
-                // El 'return' detiene la ejecución de esta ruta aquí.
-                return handleCompatibilityRequest(userQuery, currentChat, res);
-            }
-            else {console.log("La consulta no es sobre compatibilización, procediendo con el flujo normal.");}
-        }
-
-
         if (!currentChat) {
             return res.status(404).json({ message: "Chat no encontrado." });
         }
-        const documentIds = currentChat.documentIds;
+
+        const userQuery = conversationHistory[conversationHistory.length - 1].parts[0].text;
+
+        // --- SUBPROCESO 1: Intentar cambiar el contexto ---
+        const contextWasSwitched = await detectAndHandleContextSwitch(currentChat, userQuery, res);
+        if (contextWasSwitched) {
+            return; // La respuesta ya fue enviada por el subproceso, así que terminamos.
+        }
+
+        // --- SI LLEGAMOS AQUÍ, ES UN CHAT NORMAL DENTRO DEL CONTEXTO ACTUAL ---
+        
+        // --- SUBPROCESO 2: Obtener documentos del contexto activo ---
+        const documentIds = getDocumentsForActiveContext(currentChat);
         
         let contents = conversationHistory.map(msg => ({ role: msg.role, parts: msg.parts }));
 
-        if (documentIds && documentIds.length > 0) {
-            const userQuery = contents[contents.length - 1].parts[0].text;
+        if (documentIds.length > 0) {
             const queryEmbedding = await getEmbedding(userQuery);
             const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, documentIds);
             
             if (relevantChunks.length > 0) {
-                const contextString = "CONTEXTO EXTRAÍDO DE DOCUMENTOS ADJUNTOS:\n---\n" + relevantChunks.join("\n---\n");
+                const contextString = `CONTEXTO EXTRAÍDO DE DOCUMENTOS DE "${currentChat.activeContext}":\n---\n` + relevantChunks.join("\n---\n");
                 contents.unshift({ role: 'user', parts: [{ text: contextString }] });
             }
         }
 
+        // --- SUBPROCESO 3: Generar respuesta de la IA y guardar en BD ---
         let botText;
         try {
-            const apiResponse = await axios.post(GOOGLE_AI_STUDIO_URL, { contents }, {
-                headers: { 'x-goog-api-key': GOOGLE_AI_STUDIO_API_KEY, 'Content-Type': 'application/json' },
-                timeout: 30000
-            });
-            if (!apiResponse.data.candidates?.length) throw new Error("La IA no generó una respuesta.");
-            botText = apiResponse.data.candidates[0].content.parts[0].text;
+            const chatSession = generativeModel.startChat({ history: contents.slice(0, -1) });
+            const result = await chatSession.sendMessage(userQuery);
+            botText = result.response.text();
         } catch (geminiError) {
+            console.error("Error con la API de Gemini:", geminiError);
             return res.status(504).json({ message: `Error con la IA: ${geminiError.message}` });
         }
 
-        let updatedChat;
-        try {
-            const userMessage = conversationHistory[conversationHistory.length - 1];
-            const updatePayload = { $push: { messages: { $each: [{ sender: 'user', text: userMessage.parts[0].text }, { sender: 'ai', text: botText }] } } };
-            if (currentChat.title === 'Nuevo Chat') {
-                updatePayload.title = userMessage.parts[0].text.substring(0, 35) + "...";
-            }
-            updatedChat = await Chat.findByIdAndUpdate(chatId, updatePayload, { new: true });
-        } catch (dbError) {
-            return res.status(500).json({ message: "Error al guardar la conversación." });
-        }
+        const updatedChat = await Chat.findByIdAndUpdate(chatId, {
+            $push: { messages: { $each: [
+                { sender: 'user', text: userQuery },
+                { sender: 'ai', text: botText }
+            ]}}
+        }, { new: true });
+
         res.status(200).json({ updatedChat });
 
     } catch (mainError) {
+        console.error("Error inesperado en el servidor:", mainError);
         res.status(500).json({ message: "Error inesperado en el servidor." });
     }
 });
