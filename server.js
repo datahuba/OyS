@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const fs =require('fs');
 const multer = require('multer');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { Pinecone } = require('@pinecone-database/pinecone'); // <-- CORRECCIÓN: Importar Pinecone
+const { Pinecone } = require('@pinecone-database/pinecone'); 
 const mammoth = require("mammoth");
 // Importaciones de nuestro proyecto
 const { protect } = require('./middleware/authMiddleware');
@@ -85,7 +85,8 @@ let triggerEmbeddings = {};
     }
 })();
 
-const upload = multer({ dest: 'uploads/' });
+
+const upload = multer({ dest: 'uploads/' }).array('files', 10);
 
 // --- SUBPROCESOS Y FUNCIONES AUXILIARES ---
 
@@ -261,10 +262,12 @@ app.delete('/api/chats/:id', protect, async (req, res) => {
     } catch (error) { res.status(500).json({ message: "Error interno al eliminar el chat." }); }
 });
 
-app.post('/api/process-document', protect, upload.single('file'), async (req, res) => {
+app.post('/api/process-document', protect, upload, async (req, res) => { // Nota: ya no es upload.single('file')
     const { chatId, documentType } = req.body;
-    if (!req.file || !chatId || !documentType) {
-        return res.status(400).json({ message: 'Falta archivo, ID del chat o tipo de documento.' });
+
+    // Ahora verificamos req.files (plural)
+    if (!req.files || req.files.length === 0 || !chatId || !documentType) {
+        return res.status(400).json({ message: 'Faltan archivos, ID del chat o tipo de documento.' });
     }
     const allowedTypes = ['compatibilizacion', 'consolidadoFacultades', 'consolidadoAdministrativo', 'miscellaneous'];
     if (!allowedTypes.includes(documentType)) {
@@ -272,39 +275,64 @@ app.post('/api/process-document', protect, upload.single('file'), async (req, re
     }
     
     try {
-        const text = await extractTextFromFile(req.file);
-        if (!text || !text.trim()) throw new Error('No se pudo extraer texto del documento.');
-        
-        const documentId = `doc_${chatId}_${Date.now()}`;
-        const chunks = chunkDocument(text);
-        
-        const vectorsToUpsert = await Promise.all(
-            chunks.map(async (chunk, index) => ({
-                id: `${documentId}_chunk_${index}`,
-                values: await getEmbedding(chunk),
-                metadata: { documentId, chunkText: chunk },
-            }))
-        );
-        
-        await pineconeIndex.upsert(vectorsToUpsert);
-        console.log(`[Pinecone] Se han guardado ${vectorsToUpsert.length} chunks para el documento ${documentId}.`);
+        let allNewDocumentsData = [];
+        let allSystemMessages = [];
 
-        const newDocumentData = { documentId, originalName: req.file.originalname, chunkCount: chunks.length };
+        // --- 1. PROCESAMOS CADA ARCHIVO EN UN BUCLE ---
+        for (const file of req.files) {
+            console.log(`Procesando archivo: ${file.originalname}...`);
+            const text = await extractTextFromFile(file);
+            if (!text || !text.trim()) {
+                console.warn(`No se pudo extraer texto del archivo ${file.originalname}, se omitirá.`);
+                continue; // Salta al siguiente archivo si este no tiene texto
+            }
+            
+            const documentId = `doc_${chatId}_${Date.now()}_${file.originalname}`;
+            const chunks = chunkDocument(text);
+            
+            const vectorsToUpsert = await Promise.all(
+                chunks.map(async (chunk, index) => ({
+                    id: `${documentId}_chunk_${index}`,
+                    values: await getEmbedding(chunk),
+                    metadata: { documentId, chunkText: chunk },
+                }))
+            );
+            
+            await pineconeIndex.upsert(vectorsToUpsert);
+            console.log(`[Pinecone] Guardados ${vectorsToUpsert.length} chunks para ${file.originalname}.`);
+
+            // --- 2. RECOPILAMOS LOS METADATOS Y MENSAJES ---
+            allNewDocumentsData.push({ documentId, originalName: file.originalname, chunkCount: chunks.length });
+            allSystemMessages.push({ sender: 'bot', text: `Archivo "${file.originalname}" procesado y añadido a '${documentType}'.` });
+        }
         
+        if(allNewDocumentsData.length === 0) {
+            throw new Error("Ninguno de los archivos subidos contenía texto extraíble.");
+        }
+
+        // --- 3. HACEMOS UNA SOLA ACTUALIZACIÓN EN LA BASE DE DATOS ---
         const updatedChat = await Chat.findByIdAndUpdate(chatId, {
             $push: { 
-                [documentType]: newDocumentData,
-                messages: { sender: 'bot', text: `Archivo "${req.file.originalname}" procesado y añadido a '${documentType}'.` }
+                // Usamos el operador $each para añadir todos los metadatos y mensajes a la vez
+                [documentType]: { $each: allNewDocumentsData },
+                messages: { $each: allSystemMessages }
             }
         }, { new: true, runValidators: true });
 
-        res.status(200).json({ updatedChat, documentId });
+        res.status(200).json({ updatedChat });
 
     } catch (error) {
-        console.error('[BACKEND] Error procesando documento:', error); 
-        res.status(500).json({ message: 'Error al procesar el archivo.', details: error.message });
+        console.error('[BACKEND] Error procesando múltiples documentos:', error); 
+        res.status(500).json({ message: 'Error al procesar los archivos.', details: error.message });
     } finally {
-        if (req.file?.path) fs.unlinkSync(req.file.path);
+        // Limpiamos todos los archivos temporales subidos
+        if (req.files && req.files.length > 0) {
+            req.files.forEach(file => {
+                if (fs.existsSync(file.path)) {
+                    fs.unlinkSync(file.path);
+                }
+            });
+        }
     }
 });
 

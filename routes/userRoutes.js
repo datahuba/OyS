@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { protect } = require('../middleware/authMiddleware'); 
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
@@ -45,6 +46,15 @@ router.post('/login', async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: 'Error del servidor', error: error.message });
   }
+});
+
+
+router.get('/profile', protect, async (req, res) => {
+    res.status(200).json({
+        _id: req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+    });
 });
 
 module.exports = router;
