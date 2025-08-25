@@ -307,8 +307,8 @@ app.post('/api/process-document', protect, upload, async (req, res) => {
                 console.warn(`No se pudo extraer texto del archivo ${file.originalname}, se omitirá.`);
                 continue;
             }
-            
-            const documentId = `doc_${chatId}_${Date.now()}_${file.originalname}`;
+            const sanitizedFilename = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+            const documentId = `doc_${chatId}_${Date.now()}_${sanitizedFilename}`;
             const chunks = chunkDocument(text);
             
             const vectorsToUpsert = await Promise.all(
@@ -395,7 +395,7 @@ app.post('/api/chat', protect, async (req, res) => {
         res.status(200).json({ updatedChat });
         return;
         }
-        if (userQuery === "exit superuser mode" && currentChat.isSuperuserMode) {
+        if (userQuery === " " && currentChat.isSuperuserMode) {
         const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
             isSuperuserMode: false,
             $push: { messages: { sender: 'bot', text: 'Modo Superusuario DESACTIVADO. Volviendo al funcionamiento normal del chat.' }}
