@@ -439,7 +439,7 @@ app.post('/api/chat', protect, async (req, res) => {
         res.status(200).json({ updatedChat });
         return;
         }
-        if (userQuery === " " && currentChat.isSuperuserMode) {
+        if (userQuery === "exit" && currentChat.isSuperuserMode) {
         const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
             isSuperuserMode: false,
             $push: { messages: { sender: 'bot', text: 'Modo Superusuario DESACTIVADO. Volviendo al funcionamiento normal del chat.' }}
@@ -447,7 +447,7 @@ app.post('/api/chat', protect, async (req, res) => {
         res.status(200).json({ updatedChat });
         return;
         }
-        // --- NUEVO DISPARADOR PARA LA TAREA DE AUDITORÍA ---
+            // --- NUEVO DISPARADOR PARA LA TAREA DE AUDITORÍA ---
         // Comprobamos si ya estamos en el contexto 'compatibilizacion'
         if (currentChat.activeContext === 'compatibilizacion') {
             const userQueryEmbedding = await getEmbedding(userQuery);
