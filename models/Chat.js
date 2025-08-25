@@ -48,6 +48,11 @@ const chatSchema = new mongoose.Schema({
         'miscellaneous'
     ]
   },
+   // --- NUEVO CAMPO PARA EL MODO SUPERUSUARIO ---
+  isSuperuserMode: {
+    type: Boolean,
+    default: false
+  },
   // --- ATRIBUTOS PARA CADA CATEGORÍA DE DOCUMENTOS ---
   // Cada uno es un atributo separado y es un array de 'documentDetailSchema'.
   compatibilizacion: {

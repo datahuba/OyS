@@ -11,7 +11,7 @@ const mammoth = require("mammoth");
 const { protect } = require('./middleware/authMiddleware');
 const userRoutes = require('./routes/userRoutes');
 const Chat = require('./models/Chat');
-
+const GlobalDocument = require('./models/GlobalDocumens');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -279,10 +279,10 @@ app.delete('/api/chats/:id', protect, async (req, res) => {
     } catch (error) { res.status(500).json({ message: "Error interno al eliminar el chat." }); }
 });
 
-app.post('/api/process-document', protect, upload, async (req, res) => { // Nota: ya no es upload.single('file')
+
+app.post('/api/process-document', protect, upload, async (req, res) => {
     const { chatId, documentType } = req.body;
 
-    // Ahora verificamos req.files (plural)
     if (!req.files || req.files.length === 0 || !chatId || !documentType) {
         return res.status(400).json({ message: 'Faltan archivos, ID del chat o tipo de documento.' });
     }
@@ -292,16 +292,20 @@ app.post('/api/process-document', protect, upload, async (req, res) => { // Nota
     }
     
     try {
-        let allNewDocumentsData = [];
-        let allSystemMessages = [];
+        // <-- 1. OBTENEMOS EL ESTADO DEL CHAT ANTES DEL BUCLE ---
+        //    Necesitamos saber si estamos en modo superusuario.
+        const currentChat = await Chat.findById(chatId);
+        if (!currentChat) {
+            return res.status(404).json({ message: "Chat no encontrado." });
+        }
 
-        // --- 1. PROCESAMOS CADA ARCHIVO EN UN BUCLE ---
+        // --- Bucle para procesar cada archivo (esta parte no cambia) ---
         for (const file of req.files) {
             console.log(`Procesando archivo: ${file.originalname}...`);
             const text = await extractTextFromFile(file);
             if (!text || !text.trim()) {
                 console.warn(`No se pudo extraer texto del archivo ${file.originalname}, se omitirá.`);
-                continue; // Salta al siguiente archivo si este no tiene texto
+                continue;
             }
             
             const documentId = `doc_${chatId}_${Date.now()}_${file.originalname}`;
@@ -318,31 +322,46 @@ app.post('/api/process-document', protect, upload, async (req, res) => { // Nota
             await pineconeIndex.upsert(vectorsToUpsert);
             console.log(`[Pinecone] Guardados ${vectorsToUpsert.length} chunks para ${file.originalname}.`);
 
-            // --- 2. RECOPILAMOS LOS METADATOS Y MENSAJES ---
-            allNewDocumentsData.push({ documentId, originalName: file.originalname, chunkCount: chunks.length });
-            allSystemMessages.push({ sender: 'bot', text: `Archivo "${file.originalname}" procesado y añadido a '${documentType}'.` });
+            // --- 2. LÓGICA DE GUARDADO INTELIGENTE (LA MODIFICACIÓN PRINCIPAL) ---
+            if (currentChat.isSuperuserMode) {
+                // MODO SUPERUSUARIO: Guardamos en la colección global
+                console.log(`Modo Superusuario: Guardando ${file.originalname} en la base de conocimiento global.`);
+                await GlobalDocument.create({
+                    documentId,
+                    originalName: file.originalname,
+                    chunkCount: chunks.length,
+                    uploadedBy: req.user._id // Guardamos qué admin subió el archivo
+                });
+                
+                // (Opcional) Podemos añadir un mensaje de confirmación al chat actual
+                await Chat.findByIdAndUpdate(chatId, {
+                    $push: { messages: { sender: 'bot', text: `Archivo "${file.originalname}" añadido a la base de conocimiento GLOBAL.` }}
+                });
+
+            } else {
+                // MODO NORMAL: Guardamos en el chat actual, como antes
+                console.log(`Modo Normal: Guardando ${file.originalname} en el contexto '${documentType}' del chat.`);
+                const newDocumentData = { documentId, originalName: file.originalname, chunkCount: chunks.length };
+                const systemMessage = { sender: 'bot', text: `Archivo "${file.originalname}" procesado y añadido a '${documentType}'.` };
+                
+                await Chat.findByIdAndUpdate(chatId, {
+                    $push: { 
+                        [documentType]: newDocumentData,
+                        messages: systemMessage
+                    }
+                }, { runValidators: true });
+            }
         }
         
-        if(allNewDocumentsData.length === 0) {
-            throw new Error("Ninguno de los archivos subidos contenía texto extraíble.");
-        }
-
-        // --- 3. HACEMOS UNA SOLA ACTUALIZACIÓN EN LA BASE DE DATOS ---
-        const updatedChat = await Chat.findByIdAndUpdate(chatId, {
-            $push: { 
-                // Usamos el operador $each para añadir todos los metadatos y mensajes a la vez
-                [documentType]: { $each: allNewDocumentsData },
-                messages: { $each: allSystemMessages }
-            }
-        }, { new: true, runValidators: true });
-
-        res.status(200).json({ updatedChat });
+        // --- 3. RESPUESTA AL FRONTEND ---
+        // Después de procesar todos los archivos, buscamos el estado final del chat y lo devolvemos
+        const finalChatState = await Chat.findById(chatId);
+        res.status(200).json({ updatedChat: finalChatState });
 
     } catch (error) {
         console.error('[BACKEND] Error procesando múltiples documentos:', error); 
         res.status(500).json({ message: 'Error al procesar los archivos.', details: error.message });
     } finally {
-        // Limpiamos todos los archivos temporales subidos
         if (req.files && req.files.length > 0) {
             req.files.forEach(file => {
                 if (fs.existsSync(file.path)) {
@@ -367,6 +386,24 @@ app.post('/api/chat', protect, async (req, res) => {
 
         const userQuery = conversationHistory[conversationHistory.length - 1].parts[0].text;
 
+        // --- NUEVO: LÓGICA DE COMANDOS DE SUPERUSUARIO ---
+       if (userQuery === process.env.SUPERUSER_SECRET && !currentChat.isSuperuserMode) {
+        const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
+        isSuperuserMode: true,
+        $push: { messages: { sender: 'bot', text: 'Modo Superusuario ACTIVADO. Los próximos documentos se subirán a la base de conocimiento global.' }}
+        }, { new: true });
+        res.status(200).json({ updatedChat });
+        return;
+        }
+        if (userQuery === "exit superuser mode" && currentChat.isSuperuserMode) {
+        const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
+            isSuperuserMode: false,
+            $push: { messages: { sender: 'bot', text: 'Modo Superusuario DESACTIVADO. Volviendo al funcionamiento normal del chat.' }}
+        }, { new: true });
+        res.status(200).json({ updatedChat });
+        return;
+        }
+
         // --- SUBPROCESO 1: Intentar cambiar el contexto ---
         const contextWasSwitched = await detectAndHandleContextSwitch(currentChat, userQuery, res);
         if (contextWasSwitched) {
@@ -378,11 +415,15 @@ app.post('/api/chat', protect, async (req, res) => {
         // --- SUBPROCESO 2: Obtener documentos del contexto activo ---
         const documentIds = getDocumentsForActiveContext(currentChat);
         
+        const globalDocs = await GlobalDocument.find({});
+        const globalDocumentIds = globalDocs.map(doc => doc.documentId);
+        const allSearchableIds = [...documentIds, ...globalDocumentIds];
+
         let contents = conversationHistory.map(msg => ({ role: msg.role, parts: msg.parts }));
 
-        if (documentIds.length > 0) {
+        if (allSearchableIds.length > 0) {
             const queryEmbedding = await getEmbedding(userQuery);
-            const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, documentIds);
+            const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, allSearchableIds);
             
             if (relevantChunks.length > 0) {
                 const contextString = `CONTEXTO EXTRAÍDO DE DOCUMENTOS DE "${currentChat.activeContext}":\n---\n` + relevantChunks.join("\n---\n");
