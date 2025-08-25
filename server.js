@@ -57,6 +57,7 @@ const pinecone = new Pinecone({
 const pineconeIndex = pinecone.index('chat-rag'); 
 console.log("Conectado y listo para usar el índice de Pinecone: 'chat-rag'.");
 
+const COMPATIBILIZATION_AUDIT_PROMPT = process.env.COMPATIBILIZATION_AUDIT_PROMPT;
 
 // --- MONTAR RUTAS DE USUARIO ---
 app.use('/api/users', userRoutes);
@@ -163,6 +164,49 @@ const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, to
     }
 };
 
+async function handleCompatibilityAudit(chat, userQuery, res) {
+    console.log(`✅ Tarea de Auditoría de Compatibilización iniciada para el chat [${chat._id}]`);
+    
+    try {
+        // 1. OBTENER LOS DOCUMENTOS CORRECTOS: solo 'compatibilizacion' y 'globales'
+        const compatibilizacionDocs = chat.compatibilizacion.map(doc => doc.documentId);
+        const globalDocs = await GlobalDocument.find({});
+        const globalDocumentIds = globalDocs.map(doc => doc.documentId);
+        const relevantDocumentIds = [...compatibilizacionDocs, ...globalDocumentIds];
+
+        let contextString = "No se encontró contexto en los documentos.";
+        if (relevantDocumentIds.length > 0) {
+            const queryEmbedding = await getEmbedding(userQuery); // Usamos el query para encontrar los chunks más relevantes
+            const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, relevantDocumentIds, 20); // Pedimos más chunks (ej. 20)
+            
+            if (relevantChunks.length > 0) {
+                contextString = "--- INICIO DEL CONTEXTO EXTRAÍDO DE DOCUMENTOS ---\n" + relevantChunks.join("\n---\n") + "\n--- FIN DEL CONTEXTO ---";
+            }
+        }
+
+        // 2. CONSTRUIR EL PROMPT FINAL
+        const finalPrompt = `${COMPATIBILIZATION_AUDIT_PROMPT}\n\n${contextString}`;
+
+        // 3. LLAMAR A LA IA CON EL PROMPT MASIVO
+        const chatSession = generativeModel.startChat(); // Inicia una sesión limpia para esta tarea
+        const result = await chatSession.sendMessage(finalPrompt);
+        const botText = result.response.text();
+
+        // 4. GUARDAR Y RESPONDER
+        const updatedChat = await Chat.findByIdAndUpdate(chat._id, {
+            $push: { messages: { $each: [
+                { sender: 'user', text: userQuery },
+                { sender: 'ai', text: botText }
+            ]}}
+        }, { new: true });
+
+        res.status(200).json({ updatedChat });
+
+    } catch (error) {
+        console.error("Error durante la auditoría de compatibilización:", error);
+        res.status(500).json({ message: "Ocurrió un error al generar el informe de auditoría." });
+    }
+}
 // --- OTRAS FUNCIONES AUXILIARES
 async function extractTextWithGemini(filePath, mimetype) {
     const fileBuffer = fs.readFileSync(filePath);
@@ -403,7 +447,19 @@ app.post('/api/chat', protect, async (req, res) => {
         res.status(200).json({ updatedChat });
         return;
         }
+        // --- NUEVO DISPARADOR PARA LA TAREA DE AUDITORÍA ---
+        // Comprobamos si ya estamos en el contexto 'compatibilizacion'
+        if (currentChat.activeContext === 'compatibilizacion') {
+            const userQueryEmbedding = await getEmbedding(userQuery);
+            const compatTrigger = triggerEmbeddings['compatibilizacion'];
+            const similarity = cosineSimilarity(userQueryEmbedding, compatTrigger.embedding);
 
+            // Si la intención es OTRA VEZ 'compatibilizacion', activamos la tarea especial
+            if (similarity > SIMILARITY_THRESHOLD) {
+                await handleCompatibilityAudit(currentChat, userQuery, res);
+                return; // Termina la ejecución aquí
+            }
+        }
         // --- SUBPROCESO 1: Intentar cambiar el contexto ---
         const contextWasSwitched = await detectAndHandleContextSwitch(currentChat, userQuery, res);
         if (contextWasSwitched) {
