@@ -17,8 +17,8 @@ const PORT = process.env.PORT || 5000;
 
 // Middlewares globales
 const allowedOrigins = [
-  'oy-s-frontend-git-master-brandon-gonsales-projects.vercel.app',
-  'oy-s-frontend-git-develop-brandon-gonsales-projects.vercel.app',               
+  'https://oy-s-frontend-git-master-brandon-gonsales-projects.vercel.app',
+  'https://oy-s-frontend-git-develop-brandon-gonsales-projects.vercel.app',               
   'http://localhost:3000'
 ];
 
