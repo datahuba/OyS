@@ -66,24 +66,29 @@ app.use('/api/users', userRoutes);
 const SIMILARITY_THRESHOLD = 0.8;
 const CONTEXT_TRIGGERS = [
     {
-        contextName: 'compatibilizacion',
-        triggerPhrase: 'compatibilización de formularios',
-        responseMessage: 'Cambiando el contexto a "Compatibilización".'
+        contextName: 'compatibilizacionFacultades',
+        triggerPhrase: 'compatibilización de facultades',
+        responseMessage: 'Hola, soy tu agente especialista en Compatibilización de Facultades. ¿Cómo puedo ayudarte hoy'
     },
     {
         contextName: 'consolidadoFacultades',
         triggerPhrase: 'consolidado de facultades',
-        responseMessage: 'Cambiando el contexto a "Consolidado de Facultades".'
+        responseMessage: 'Hola, soy tu agente especialista en Consolidado de Facultades. ¿Cómo puedo ayudarte hoy'
+    },
+    {
+        contextName: 'compatibilizacionAdministrativo',
+        triggerPhrase: 'compatibilización administrativa',
+        responseMessage: 'Hola, soy tu agente especialista en Compatibilización Administrativa. ¿Cómo puedo ayudarte hoy'
     },
     {
         contextName: 'consolidadoAdministrativo',
-        triggerPhrase: 'consolidado de administrativos',
-        responseMessage: 'Cambiando el contexto a "Consolidado de Administrativos".'
+        triggerPhrase: 'consolidado administrativo',
+        responseMessage: 'Hola, soy tu agente especialista en Consolidado Administrativo. ¿Cómo puedo ayudarte hoy'
     },
     {
         contextName: 'miscellaneous',
-        triggerPhrase: 'terminadar proceso',
-        responseMessage: 'Volviendo al contexto general del chat.'
+        triggerPhrase: 'terminar proceso actual',
+        responseMessage: 'Bienvenido de vuelta. Soy un modelo de Inteligencia Artificial entrenado para asistirte en tus tareas. ¿Qué quieres hacer hoy?'
     }
 ];
 let triggerEmbeddings = {};
@@ -287,6 +292,45 @@ const cosineSimilarity = (vecA, vecB) => { let dotProduct = 0, magA = 0, magB = 
 
 
 // --- RUTAS DE LA API ---
+app.post('/api/chats/:chatId/context', protect, async (req, res) => {
+    const { chatId } = req.params;
+    const { newContext } = req.body;
+
+    // Validamos que el contexto enviado sea válido
+    const validContexts = CONTEXT_TRIGGERS.map(t => t.contextName);
+    if (!newContext || !validContexts.includes(newContext)) {
+        return res.status(400).json({ message: 'Contexto inválido o no proporcionado.' });
+    }
+
+    try {
+        const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({ message: "Chat no encontrado." });
+        }
+
+        // Si el contexto ya es el actual, no hacemos nada para evitar mensajes duplicados
+        if (chat.activeContext === newContext) {
+            return res.status(200).json({ updatedChat: chat });
+        }
+
+        // Buscamos el mensaje de confirmación en nuestra configuración
+        const trigger = CONTEXT_TRIGGERS.find(t => t.contextName === newContext);
+        const botMessage = trigger ? trigger.responseMessage : `Contexto cambiado a ${newContext}.`;
+
+        const updatedChat = await Chat.findByIdAndUpdate(chatId, {
+            activeContext: newContext,
+            $push: { messages: { sender: 'bot', text: botMessage } }
+        }, { new: true });
+
+        res.status(200).json({ updatedChat });
+
+    } catch (error) {
+        console.error("Error al cambiar el contexto explícitamente:", error);
+        res.status(500).json({ message: "Error del servidor al cambiar el contexto." });
+    }
+});
+
+
 
 app.get('/api/chats', protect, async (req, res) => {
     try {
@@ -330,7 +374,15 @@ app.post('/api/process-document', protect, upload, async (req, res) => {
     if (!req.files || req.files.length === 0 || !chatId || !documentType) {
         return res.status(400).json({ message: 'Faltan archivos, ID del chat o tipo de documento.' });
     }
-    const allowedTypes = ['compatibilizacion', 'consolidadoFacultades', 'consolidadoAdministrativo', 'miscellaneous'];
+    
+    const allowedTypes = [
+    'compatibilizacionFacultades', 
+    'consolidadoFacultades', 
+    'compatibilizacionAdministrativo', 
+    'consolidadoAdministrativo',
+    'miscellaneous'
+    ];
+
     if (!allowedTypes.includes(documentType)) {
         return res.status(400).json({ message: 'Tipo de documento inválido.' });
     }

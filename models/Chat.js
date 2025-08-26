@@ -38,16 +38,17 @@ const chatSchema = new mongoose.Schema({
   },
   messages: [messageSchema], // Un array de mensajes que siguen la plantilla messageSchema
   activeContext: {
-    type: String,
-    required: true,
-    default: 'miscellaneous',
-    enum: [ // enum asegura que solo estos valores son válidos
-        'compatibilizacion', 
-        'consolidadoFacultades', 
-        'consolidadoAdministrativo', 
-        'miscellaneous'
-    ]
-  },
+      type: String,
+      required: true,
+      default: 'miscellaneous', // El contexto general por defecto
+      enum: [
+          'compatibilizacionFacultades', 
+          'consolidadoFacultades', 
+          'compatibilizacionAdministrativo', 
+          'consolidadoAdministrativo',
+          'miscellaneous'
+      ]
+    },
    // --- NUEVO CAMPO PARA EL MODO SUPERUSUARIO ---
   isSuperuserMode: {
     type: Boolean,
@@ -55,11 +56,15 @@ const chatSchema = new mongoose.Schema({
   },
   // --- ATRIBUTOS PARA CADA CATEGORÍA DE DOCUMENTOS ---
   // Cada uno es un atributo separado y es un array de 'documentDetailSchema'.
-  compatibilizacion: {
+  compatibilizacionFacultades: {
     type: [documentDetailSchema],
     default: [],
   },
   consolidadoFacultades: {
+    type: [documentDetailSchema],
+    default: [],
+  },
+  compatibilizacionAdministrativo: {
     type: [documentDetailSchema],
     default: [],
   },
