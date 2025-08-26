@@ -68,31 +68,31 @@ const CONTEXT_TRIGGERS = [
     {
         contextName: 'compatibilizacionFacultades',
         triggerPhrase: 'compatibilización de facultades',
-        responseMessage: 'Hola, soy tu agente especialista...',
+        responseMessage: 'Hola, soy tu agente especialista en Compatibilización de Facultades. ¿Cómo puedo ayudarte hoy?',
         promptEnvVar: 'PROMPT_COMPATIBILIZACION_FACULTADES' // <-- NUEVO
     },
     {
         contextName: 'consolidadoFacultades',
         triggerPhrase: 'consolidado de facultades',
-        responseMessage: 'Hola, soy tu agente especialista...',
+        responseMessage: 'Hola, soy tu agente especialista en Consolidado de Facultades. ¿Cómo puedo ayudarte hoy',
         promptEnvVar: 'PROMPT_CONSOLIDADO_FACULTADES' // <-- NUEVO
     },
     {
         contextName: 'compatibilizacionAdministrativo',
         triggerPhrase: 'compatibilización administrativa',
-        responseMessage: 'Hola, soy tu agente especialista...',
+        responseMessage: 'Hola, soy tu agente especialista en Compatibilización Administrativa. ¿Cómo puedo ayudarte hoy',
         promptEnvVar: 'PROMPT_COMPATIBILIZACION_ADMINISTRATIVO' // <-- NUEVO
     },
     {
         contextName: 'consolidadoAdministrativo',
         triggerPhrase: 'consolidado administrativo',
-        responseMessage: 'Hola, soy tu agente especialista...',
+        responseMessage: 'Hola, soy tu agente especialista en Consolidado Administrativo. ¿Cómo puedo ayudarte hoy',
         promptEnvVar: 'PROMPT_CONSOLIDADO_ADMINISTRATIVO' // <-- NUEVO
     },
     {
         contextName: 'miscellaneous', // Este no tiene tarea especial
-        triggerPhrase: 'terminar proceso actual',
-        responseMessage: 'Bienvenido de vuelta...'
+        triggerPhrase: 'volver a chat',
+        responseMessage: 'Bienvenido de vuelta. Soy un modelo de Inteligencia Artificial entrenado para asistirte en tus tareas. ¿Qué quieres hacer hoy?'
         // Sin promptEnvVar
     }
 ];
