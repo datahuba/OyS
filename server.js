@@ -63,11 +63,11 @@ const COMPATIBILIZATION_AUDIT_PROMPT = process.env.COMPATIBILIZATION_AUDIT_PROMP
 app.use('/api/users', userRoutes);
 
 // --- LÓGICA DE DETECCIÓN DE CONTEXTO POR EMBEDDINGS ---
-const SIMILARITY_THRESHOLD = 0.8;
+const SIMILARITY_THRESHOLD = 0.9;
 const CONTEXT_TRIGGERS = [
     {
         contextName: 'compatibilizacionFacultades',
-        triggerPhrase: 'compatibilización de facultades',
+        triggerPhrase: 'compatibilizacion de facultades',
         responseMessage: 'Hola, soy tu agente especialista en Compatibilización de Facultades. ¿Cómo puedo ayudarte hoy?',
         promptEnvVar: 'PROMPT_COMPATIBILIZACION_FACULTADES' // <-- NUEVO
     },
@@ -79,7 +79,7 @@ const CONTEXT_TRIGGERS = [
     },
     {
         contextName: 'compatibilizacionAdministrativo',
-        triggerPhrase: 'compatibilización administrativa',
+        triggerPhrase: 'compatibilizacion administrativo',
         responseMessage: 'Hola, soy tu agente especialista en Compatibilización Administrativa. ¿Cómo puedo ayudarte hoy',
         promptEnvVar: 'PROMPT_COMPATIBILIZACION_ADMINISTRATIVO' // <-- NUEVO
     },
