@@ -68,27 +68,32 @@ const CONTEXT_TRIGGERS = [
     {
         contextName: 'compatibilizacionFacultades',
         triggerPhrase: 'compatibilización de facultades',
-        responseMessage: 'Hola, soy tu agente especialista en Compatibilización de Facultades. ¿Cómo puedo ayudarte hoy'
+        responseMessage: 'Hola, soy tu agente especialista...',
+        promptEnvVar: 'PROMPT_COMPATIBILIZACION_FACULTADES' // <-- NUEVO
     },
     {
         contextName: 'consolidadoFacultades',
         triggerPhrase: 'consolidado de facultades',
-        responseMessage: 'Hola, soy tu agente especialista en Consolidado de Facultades. ¿Cómo puedo ayudarte hoy'
+        responseMessage: 'Hola, soy tu agente especialista...',
+        promptEnvVar: 'PROMPT_CONSOLIDADO_FACULTADES' // <-- NUEVO
     },
     {
         contextName: 'compatibilizacionAdministrativo',
         triggerPhrase: 'compatibilización administrativa',
-        responseMessage: 'Hola, soy tu agente especialista en Compatibilización Administrativa. ¿Cómo puedo ayudarte hoy'
+        responseMessage: 'Hola, soy tu agente especialista...',
+        promptEnvVar: 'PROMPT_COMPATIBILIZACION_ADMINISTRATIVO' // <-- NUEVO
     },
     {
         contextName: 'consolidadoAdministrativo',
         triggerPhrase: 'consolidado administrativo',
-        responseMessage: 'Hola, soy tu agente especialista en Consolidado Administrativo. ¿Cómo puedo ayudarte hoy'
+        responseMessage: 'Hola, soy tu agente especialista...',
+        promptEnvVar: 'PROMPT_CONSOLIDADO_ADMINISTRATIVO' // <-- NUEVO
     },
     {
-        contextName: 'miscellaneous',
+        contextName: 'miscellaneous', // Este no tiene tarea especial
         triggerPhrase: 'terminar proceso actual',
-        responseMessage: 'Bienvenido de vuelta. Soy un modelo de Inteligencia Artificial entrenado para asistirte en tus tareas. ¿Qué quieres hacer hoy?'
+        responseMessage: 'Bienvenido de vuelta...'
+        // Sin promptEnvVar
     }
 ];
 let triggerEmbeddings = {};
@@ -169,31 +174,39 @@ const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, to
     }
 };
 
-async function handleCompatibilityAudit(chat, userQuery, res) {
-    console.log(`✅ Tarea de Auditoría de Compatibilización iniciada para el chat [${chat._id}]`);
+async function handleSpecializedAgentTask(chat, userQuery, res) {
+    const activeContextName = chat.activeContext;
+    console.log(`✅ Tarea Especializada del Agente [${activeContextName}] iniciada para el chat [${chat._id}]`);
     
     try {
-        // 1. OBTENER LOS DOCUMENTOS CORRECTOS: solo 'compatibilizacion' y 'globales'
-        const compatibilizacionDocs = chat.compatibilizacion.map(doc => doc.documentId);
+        // 1. OBTENER EL PROMPT CORRECTO DESDE LA CONFIGURACIÓN
+        const triggerConfig = CONTEXT_TRIGGERS.find(t => t.contextName === activeContextName);
+        const agentPrompt = process.env[triggerConfig.promptEnvVar];
+
+        if (!agentPrompt) {
+            throw new Error(`El prompt para el agente '${activeContextName}' no está configurado en .env.`);
+        }
+
+        // 2. OBTENER LOS DOCUMENTOS CORRECTOS: los del contexto activo + los globales
+        const agentDocumentIds = getDocumentsForActiveContext(chat);
         const globalDocs = await GlobalDocument.find({});
         const globalDocumentIds = globalDocs.map(doc => doc.documentId);
-        const relevantDocumentIds = [...compatibilizacionDocs, ...globalDocumentIds];
+        const relevantDocumentIds = [...agentDocumentIds, ...globalDocumentIds];
 
-        let contextString = "No se encontró contexto en los documentos.";
+        let contextString = "No se encontró contexto relevante en los documentos.";
         if (relevantDocumentIds.length > 0) {
-            const queryEmbedding = await getEmbedding(userQuery); // Usamos el query para encontrar los chunks más relevantes
-            const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, relevantDocumentIds, 20); // Pedimos más chunks (ej. 20)
+            const queryEmbedding = await getEmbedding(userQuery);
+            const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, relevantDocumentIds, 50);
             
             if (relevantChunks.length > 0) {
                 contextString = "--- INICIO DEL CONTEXTO EXTRAÍDO DE DOCUMENTOS ---\n" + relevantChunks.join("\n---\n") + "\n--- FIN DEL CONTEXTO ---";
             }
         }
 
-        // 2. CONSTRUIR EL PROMPT FINAL
-        const finalPrompt = `${COMPATIBILIZATION_AUDIT_PROMPT}\n\n${contextString}`;
-
-        // 3. LLAMAR A LA IA CON EL PROMPT MASIVO
-        const chatSession = generativeModel.startChat(); // Inicia una sesión limpia para esta tarea
+        // 3. CONSTRUIR EL PROMPT FINAL Y LLAMAR A LA IA
+        const finalPrompt = `${agentPrompt}\n\n${contextString}\n\nBasado en lo anterior, responde a la siguiente petición del usuario: "${userQuery}"`;
+        
+        const chatSession = generativeModel.startChat();
         const result = await chatSession.sendMessage(finalPrompt);
         const botText = result.response.text();
 
@@ -208,10 +221,11 @@ async function handleCompatibilityAudit(chat, userQuery, res) {
         res.status(200).json({ updatedChat });
 
     } catch (error) {
-        console.error("Error durante la auditoría de compatibilización:", error);
-        res.status(500).json({ message: "Ocurrió un error al generar el informe de auditoría." });
+        console.error(`Error durante la tarea del agente [${activeContextName}]:`, error);
+        res.status(500).json({ message: `Ocurrió un error al ejecutar la tarea del agente.` });
     }
 }
+
 // --- OTRAS FUNCIONES AUXILIARES
 async function extractTextWithGemini(filePath, mimetype) {
     const fileBuffer = fs.readFileSync(filePath);
@@ -367,6 +381,35 @@ app.delete('/api/chats/:id', protect, async (req, res) => {
     } catch (error) { res.status(500).json({ message: "Error interno al eliminar el chat." }); }
 });
 
+app.put('/api/chats/:id/title', protect, async (req, res) => {
+    const { chatId } = req.params;
+    const { newTitle } = req.body;
+
+    if (!newTitle || typeof newTitle !== 'string' || newTitle.trim().length === 0) {
+        return res.status(400).json({ message: 'Se requiere un nuevo título válido.' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(chatId)) {
+        return res.status(400).json({ message: 'ID de chat inválido.' });
+    }
+
+    try {
+        const chat = await Chat.findOne({ _id: chatId, userId: req.user._id });
+
+        if (!chat) {
+            return res.status(404).json({ message: 'Chat no encontrado o no autorizado.' });
+        }
+
+        chat.title = newTitle.trim();
+        await chat.save();
+
+        res.status(200).json({ message: 'Título actualizado exitosamente.', updatedChat: chat });
+
+    } catch (error) {
+        console.error("Error al actualizar el título del chat:", error);
+        res.status(500).json({ message: "Error del servidor al actualizar el título." });
+    }
+});
 
 app.post('/api/process-document', protect, upload, async (req, res) => {
     const { chatId, documentType } = req.body;
@@ -499,19 +542,24 @@ app.post('/api/chat', protect, async (req, res) => {
         res.status(200).json({ updatedChat });
         return;
         }
-            // --- NUEVO DISPARADOR PARA LA TAREA DE AUDITORÍA ---
-        // Comprobamos si ya estamos en el contexto 'compatibilizacion'
-        if (currentChat.activeContext === 'compatibilizacion') {
-            const userQueryEmbedding = await getEmbedding(userQuery);
-            const compatTrigger = triggerEmbeddings['compatibilizacion'];
-            const similarity = cosineSimilarity(userQueryEmbedding, compatTrigger.embedding);
 
-            // Si la intención es OTRA VEZ 'compatibilizacion', activamos la tarea especial
+        // --- DISPARADOR GENÉRICO PARA TAREAS DE AGENTES ESPECIALIZADOS ---
+        const activeContextName = currentChat.activeContext;
+        const activeTrigger = CONTEXT_TRIGGERS.find(t => t.contextName === activeContextName);
+
+        // Comprobamos si el contexto activo TIENE una tarea especial (no es 'miscellaneous')
+        if (activeTrigger && activeTrigger.promptEnvVar) {
+            const userQueryEmbedding = await getEmbedding(userQuery);
+            const agentTriggerEmbedding = triggerEmbeddings[activeContextName].embedding;
+            const similarity = cosineSimilarity(userQueryEmbedding, agentTriggerEmbedding);
+
+            // Si la intención es OTRA VEZ la del agente activo, activamos la tarea especial
             if (similarity > SIMILARITY_THRESHOLD) {
-                await handleCompatibilityAudit(currentChat, userQuery, res);
+                await handleSpecializedAgentTask(currentChat, userQuery, res); // Llamamos a la nueva función genérica
                 return; // Termina la ejecución aquí
             }
         }
+
         // --- SUBPROCESO 1: Intentar cambiar el contexto ---
         const contextWasSwitched = await detectAndHandleContextSwitch(currentChat, userQuery, res);
         if (contextWasSwitched) {
