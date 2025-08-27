@@ -381,20 +381,23 @@ app.delete('/api/chats/:id', protect, async (req, res) => {
     } catch (error) { res.status(500).json({ message: "Error interno al eliminar el chat." }); }
 });
 
-app.put('/api/chats/:id/title', protect, async (req, res) => {
-    const { chatId } = req.params;
+app.put('/api/chats/:id/title', protect, async (req, res) => { // <-- El parámetro se llama ':id'
+    // --- CAMBIO 1: Usa 'id' en lugar de 'chatId' ---
+    const { id } = req.params; 
     const { newTitle } = req.body;
 
     if (!newTitle || typeof newTitle !== 'string' || newTitle.trim().length === 0) {
         return res.status(400).json({ message: 'Se requiere un nuevo título válido.' });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(chatId)) {
+    // --- CAMBIO 2: Valida 'id' ---
+    if (!mongoose.Types.ObjectId.isValid(id)) { 
         return res.status(400).json({ message: 'ID de chat inválido.' });
     }
 
     try {
-        const chat = await Chat.findOne({ _id: chatId, userId: req.user._id });
+        // --- CAMBIO 3: Busca usando 'id' ---
+        const chat = await Chat.findOne({ _id: id, userId: req.user._id }); 
 
         if (!chat) {
             return res.status(404).json({ message: 'Chat no encontrado o no autorizado.' });
