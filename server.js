@@ -271,7 +271,7 @@ const extractTextFromFile = async (file) => {
     // Lógica para decidir qué herramienta de extracción usar
 
     // CASO 1: El archivo es un .docx
-    if (clientMimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    if (clientMimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'||"application/msword") {
         
         console.log("Archivo DOCX detectado. Usando 'mammoth' para extracción local...");
         try {
