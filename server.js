@@ -271,13 +271,13 @@ const extractTextFromFile = async (file) => {
     let text = '';
 
     // CASO 1: DOCX (mammoth)
-    if (fileExt === '.docx') {
+    if (fileExt === '.docx'||'.doc'){
         console.log(`Procesando localmente (DOCX): ${file.originalname}`);
         const result = await mammoth.extractRawText({ path: filePath });
         text = result.value;
     }
     // CASO 2: XLSX (xlsx)
-    else if (fileExt === '.xlsx') {
+    else if (fileExt === '.xlsx'||'.xls') {
         console.log(`Procesando localmente (XLSX): ${file.originalname}`);
         const workbook = xlsx.readFile(filePath);
         const fullText = [];
@@ -302,7 +302,7 @@ const extractTextFromFile = async (file) => {
         }
     }
     // CASO 4: PPTX y VSDX (Delegar al microservicio)
-    else if (fileExt === '.pptx' || fileExt === '.vsdx') {
+    else if (fileExt === '.pptx' || fileExt === '.vsdx'|| fileExt === '.ppt' || fileExt === '.vsd') {
         if (!CONVERSION_SERVICE_URL) throw new Error('El servicio de conversión no está configurado.');
         try {
             console.log(`Delegando (${fileExt.toUpperCase()}) ${file.originalname} al servicio de conversión...`);
