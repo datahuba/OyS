@@ -3,11 +3,16 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const fs =require('fs');
+const path = require('path');
 const multer = require('multer');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { Pinecone } = require('@pinecone-database/pinecone'); 
 const mammoth = require("mammoth");
-// Importaciones de nuestro proyecto
+const xlsx = require('xlsx');
+const pdf = require('pdf-parse');
+const axios = require('axios');
+const FormData = require('form-data');
+
 const { protect } = require('./middleware/authMiddleware');
 const userRoutes = require('./routes/userRoutes');
 const Chat = require('./models/Chat');
@@ -49,6 +54,7 @@ const GOOGLE_AI_STUDIO_API_KEY = process.env.GOOGLE_AI_STUDIO_API_KEY;
 const genAI = new GoogleGenerativeAI(GOOGLE_AI_STUDIO_API_KEY);
 const embeddingModel = genAI.getGenerativeModel({ model: "embedding-001" });
 const generativeModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const visionGenerativeModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
 // <-- CORRECCIÓN: Inicializar Pinecone
 const pinecone = new Pinecone({
@@ -57,7 +63,7 @@ const pinecone = new Pinecone({
 const pineconeIndex = pinecone.index('chat-rag'); 
 console.log("Conectado y listo para usar el índice de Pinecone: 'chat-rag'.");
 
-const COMPATIBILIZATION_AUDIT_PROMPT = process.env.COMPATIBILIZATION_AUDIT_PROMPT;
+const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
 
 // --- MONTAR RUTAS DE USUARIO ---
 app.use('/api/users', userRoutes);
@@ -226,78 +232,112 @@ async function handleSpecializedAgentTask(chat, userQuery, res) {
     }
 }
 
-// --- OTRAS FUNCIONES AUXILIARES
+// Función para extraer texto de PDFs con Gemini (nuestro fallback)
 async function extractTextWithGemini(filePath, mimetype) {
+    console.log("Fallback: Intentando extracción de PDF con Gemini Vision...");
     const fileBuffer = fs.readFileSync(filePath);
-
-    // 1. Prepara el archivo para el SDK. El SDK se encarga de la codificación Base64.
-    const filePart = {
-        inlineData: {
-            data: fileBuffer.toString("base64"),
-            mimeType: mimetype,
-        },
-    };
-
-    const prompt = "Extrae todo el texto de este documento. Devuelve únicamente el texto plano, sin ningún formato adicional.";
-
+    const filePart = { inlineData: { data: fileBuffer.toString("base64"), mimeType: mimetype } };
+    const prompt = "Extrae todo el texto de este documento. Devuelve únicamente el texto plano, sin ningún formato adicional, como si lo copiaras y pegaras. No resumas nada.";
     try {
-        // 2. Llama a la API usando el modelo generativo del SDK. Es más simple y robusto.
-        const result = await generativeModel.generateContent([prompt, filePart]);
-        const response = result.response;
-        const text = response.text();
-        return text;
+        const result = await visionGenerativeModel.generateContent([prompt, filePart]);
+        return result.response.text();
     } catch (error) {
-    // ESTA LÍNEA ES LA CLAVE DE TODO
-    console.error('Error detallado de la API de Gemini:', error); 
-    
-    throw new Error('La API de Gemini no pudo procesar el archivo.');
-
+        console.error('Error detallado de la API de Gemini:', error); 
+        throw new Error('La API de Gemini no pudo procesar el archivo.');
     }
 }
 
-// CÓDIGO CORREGIDO Y LISTO PARA USAR
+// --- NUEVO: Función para describir imágenes con Gemini ---
+async function describeImageWithGemini(filePath, mimetype, originalName) {
+    console.log("Procesando imagen con Gemini Vision...");
+    const fileBuffer = fs.readFileSync(filePath);
+    const filePart = { inlineData: { data: fileBuffer.toString("base64"), mimeType: mimetype } };
+    const prompt = "Describe detalladamente esta imagen. Si contiene texto, transcríbelo. Si es un diagrama, explica lo que representa. Si es una foto, describe la escena y los objetos.";
+    try {
+        const result = await visionGenerativeModel.generateContent([prompt, filePart]);
+        return `Descripción de la imagen "${originalName}":\n${result.response.text()}`;
+    } catch (error) {
+        console.error('Error detallado de la API de Gemini Vision:', error);
+        throw new Error('La API de Gemini no pudo procesar la imagen.');
+    }
+}
 
-const supportedClientTypes = [
-    'application/pdf',
-    'text/plain'
-];
-const geminiMimeTypeMapper = {};
+
 
 const extractTextFromFile = async (file) => {
     const filePath = file.path;
     const clientMimeType = file.mimetype;
+    const fileExt = path.extname(file.originalname).toLowerCase();
     let text = '';
 
-    // Lógica para decidir qué herramienta de extracción usar
-
-    // CASO 1: El archivo es un .docx
-    if (clientMimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'||"application/msword") {
-        
-        console.log("Archivo DOCX detectado. Usando 'mammoth' para extracción local...");
-        try {
-            // Usamos mammoth para convertir el .docx a texto plano
-            const result = await mammoth.extractRawText({ path: filePath });
-            text = result.value;
-            if (!text || !text.trim()) {
-                throw new Error('Mammoth no pudo extraer texto del archivo .docx.');
-            }
-        } catch (mammothError) {
-            console.error("Error con Mammoth al procesar .docx:", mammothError);
-            throw new Error('No se pudo procesar el archivo de Word.');
-        }
-
-    // CASO 2: Es un PDF o un archivo de texto plano (soportados por Gemini)
-    } else if (clientMimeType === 'application/pdf' || clientMimeType === 'text/plain') {
-        
-        console.log(`Archivo ${clientMimeType} detectado. Usando Gemini para extracción...`);
-        text = await extractTextWithGemini(filePath, clientMimeType);
-
-    // CASO 3: El tipo de archivo no está soportado
-    } else {
-        console.error(`Tipo de archivo no soportado: ${clientMimeType}`);
-        throw new Error('Tipo de archivo no soportado. Por favor, sube un .docx, .pdf o .txt');
+    // CASO 1: DOCX (mammoth)
+    if (fileExt === '.docx') {
+        console.log(`Procesando localmente (DOCX): ${file.originalname}`);
+        const result = await mammoth.extractRawText({ path: filePath });
+        text = result.value;
     }
-    
+    // CASO 2: XLSX (xlsx)
+    else if (fileExt === '.xlsx') {
+        console.log(`Procesando localmente (XLSX): ${file.originalname}`);
+        const workbook = xlsx.readFile(filePath);
+        const fullText = [];
+        workbook.SheetNames.forEach(sheetName => {
+            const worksheet = workbook.Sheets[sheetName];
+            const sheetText = xlsx.utils.sheet_to_txt(worksheet);
+            if (sheetText) fullText.push(`Contenido de la hoja "${sheetName}":\n${sheetText}`);
+        });
+        text = fullText.join('\n\n---\n\n');
+    }
+    // CASO 3: PDF (pdf-parse con fallback a Gemini)
+    else if (fileExt === '.pdf') {
+        console.log(`Procesando localmente (PDF): ${file.originalname}`);
+        try {
+            const dataBuffer = fs.readFileSync(filePath);
+            const data = await pdf(dataBuffer);
+            text = data.text;
+            if (!text || !text.trim()) throw new Error("pdf-parse no extrajo texto.");
+        } catch (error) {
+            console.warn("pdf-parse falló. Usando fallback de Gemini...");
+            text = await extractTextWithGemini(filePath, clientMimeType);
+        }
+    }
+    // CASO 4: PPTX y VSDX (Delegar al microservicio)
+    else if (fileExt === '.pptx' || fileExt === '.vsdx') {
+        if (!CONVERSION_SERVICE_URL) throw new Error('El servicio de conversión no está configurado.');
+        try {
+            console.log(`Delegando (${fileExt.toUpperCase()}) ${file.originalname} al servicio de conversión...`);
+            const form = new FormData();
+            form.append('file', fs.createReadStream(filePath), file.originalname);
+            const response = await axios.post(CONVERSION_SERVICE_URL, form, {
+                headers: form.getHeaders(),
+                responseType: 'arraybuffer'
+            });
+            console.log('PDF recibido del servicio. Extrayendo texto...');
+            const data = await pdf(response.data);
+            text = data.text;
+        } catch (error) {
+            console.error("Error con el servicio de conversión:", error.message);
+            throw new Error('La conversión remota del archivo falló.');
+        }
+    }
+    // CASO 5: IMÁGENES
+    else if (['.jpg', '.jpeg', '.png', '.webp'].includes(fileExt) || clientMimeType.startsWith('image/')) {
+        console.log(`Procesando (Imagen): ${file.originalname}`);
+        text = await describeImageWithGemini(filePath, clientMimeType, file.originalname);
+    }
+    // CASO 6: TXT
+    else if (fileExt === '.txt' || clientMimeType === 'text/plain') {
+        console.log(`Procesando localmente (TXT): ${file.originalname}`);
+        text = fs.readFileSync(filePath, 'utf-8');
+    }
+    // CASO 7: Archivo no soportado
+    else {
+        throw new Error(`Tipo de archivo no soportado: ${fileExt} (${clientMimeType})`);
+    }
+
+    if (!text || !text.trim()) {
+        throw new Error('No se pudo extraer o generar contenido de texto del archivo.');
+    }
     return text;
 };
 const getEmbedding = async (text) => { const result = await embeddingModel.embedContent(text); return result.embedding.values; };
