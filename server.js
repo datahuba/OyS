@@ -711,7 +711,7 @@ app.post('/api/chat', protect, async (req, res) => {
     }
 });
 
-app.post('/api/extract-json', protect, upload, async (req, res) => {
+app.post('/api/extract-json', /* protect, */ upload, async (req, res) => {
     const { formType } = req.body;
 
     if (!req.files || req.files.length === 0) {
