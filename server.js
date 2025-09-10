@@ -12,7 +12,7 @@ const xlsx = require('xlsx');
 const pdf = require('pdf-parse');
 const axios = require('axios');
 const FormData = require('form-data');
-
+const Chat = require('./models/Chat'); 
 const { protect } = require('./middleware/authMiddleware');
 const userRoutes = require('./routes/userRoutes');
 const Chat = require('./models/Chat');
@@ -712,38 +712,92 @@ app.post('/api/chat', protect, async (req, res) => {
     }
 });
 
-app.post('/api/extract-json',  protect,  upload, async (req, res) => {
-    const { formType } = req.body;
+app.post('/api/extract-json', protect, upload, async (req, res) => {
+    // 1. Obtenemos los datos del body, como los envía el frontend
+    const { formType, chatId } = req.body;
 
+    // --- Validaciones (igual que antes) ---
+    if (!mongoose.Types.ObjectId.isValid(chatId)) {
+        return res.status(400).json({ message: 'ID de Chat inválido.' });
+    }
+    // ... resto de tus validaciones ...
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ message: 'No se han subido archivos.' });
     }
-    if (req.files.length > 1) {
-        // Solo 1 archivo
-        return res.status(400).json({ message: 'Por favor, sube solo un archivo a la vez para la extracción.' });
+     if (req.files.length > 1) {
+        return res.status(400).json({ message: 'Por favor, sube solo un archivo a la vez.' });
     }
     if (!formType || !['form1', 'form2', 'form3'].includes(formType)) {
-        return res.status(400).json({ message: 'Se debe especificar un tipo de formulario válido: form1, form2 o form3.' });
+        return res.status(400).json({ message: 'Tipo de formulario inválido.' });
     }
 
     const file = req.files[0];
 
     try {
-        console.log(`[API] Solicitud recibida para extraer JSON de ${file.originalname} como ${formType}.`);
+        console.log(`[API] Extrayendo JSON de ${file.originalname} para el Chat ID: ${chatId}`);
         
+        // 2. Extraemos el JSON (esto no cambia)
         const filledJson = await processAndFillForm(file, formType);
-        res.status(200).json(filledJson);
+
+        // --- 3. Lógica de Guardado (EL GRAN CAMBIO) ---
+
+        // a) Creamos un nombre de archivo único para el JSON de salida
+        const outputFilename = `analisis_${chatId}_${formType}_${Date.now()}.json`;
+        const outputPath = path.join(__dirname, 'json_outputs', outputFilename);
+
+        // b) Guardamos el objeto JSON como un archivo en el servidor
+        await fs.promises.writeFile(outputPath, JSON.stringify(filledJson, null, 2));
+        console.log(`[Storage] JSON extraído guardado en: ${outputPath}`);
+
+        // c) Creamos el objeto de metadatos para guardar en MongoDB
+        const jsonDocumentMetadata = {
+            // Usamos un 'documentId' especial para diferenciarlo de los de Pinecone
+            documentId: `json_output_${outputFilename}`, 
+            originalName: file.originalname,
+            // Guardamos metadatos adicionales que serán útiles
+            metadata: {
+                formType: formType,
+                jsonPath: outputPath // La ruta donde está el archivo JSON
+            },
+            chunkCount: 1 // Un archivo JSON es una sola "unidad"
+        };
+        
+        // d) Encontramos el chat y añadimos estos metadatos al array del contexto activo
+        const chat = await Chat.findById(chatId);
+        if (!chat) {
+            return res.status(404).json({ message: "No se encontró el Chat para actualizar." });
+        }
+        
+        // El frontend nos dice que esta tarea es parte de 'consolidadoFacultades'
+        const activeContextKey = 'consolidadoFacultades'; 
+        
+        const updatedChat = await Chat.findByIdAndUpdate(
+            chatId,
+            { 
+                $push: { 
+                    [activeContextKey]: jsonDocumentMetadata,
+                    messages: {
+                        sender: 'bot',
+                        text: `Archivo de formulario "${file.originalname}" procesado y sus datos estructurados han sido guardados.`
+                    }
+                } 
+            },
+            { new: true }
+        );
+
+        // 4. Devolvemos la respuesta EXACTA que el frontend espera
+        res.status(200).json({ updatedChat: updatedChat });
 
     } catch (error) {
         console.error(`[API] Error en la ruta /api/extract-json:`, error);
         res.status(500).json({ message: 'Error en el servidor durante la extracción del JSON.', error: error.message });
     } finally {
+        // Limpiamos el archivo TEMPORAL de la carpeta /uploads
         if (fs.existsSync(file.path)) {
             fs.unlinkSync(file.path);
         }
     }
 });
-
 
 
 // --- INICIAR SERVIDOR ---
