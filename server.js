@@ -351,7 +351,7 @@ const processAndFillForm = async (file, formType) => {
 
     // Cargar el prompt
     const promptKey = `GEMINI_PROMPT_${formType.toUpperCase()}`;
-    console.log(romptKey);
+    console.log(promptKey);
     // Cargar esquema JSON
     const schemaPath = path.join(__dirname, 'schemas', `${formType}.schema.json`);
     const [promptTemplate, schemaFileContent] = await Promise.all([process.env[promptKey],fs.promises.readFile(schemaPath, 'utf8')]);
