@@ -1,0 +1,43 @@
+{
+  "personalFacultad": {
+    "nombreFacultad": null,
+    "totalPuestos": 0,
+    "puestosDeTrabajo": [
+      {
+        "datosTrabajador": {
+          "nombreCompleto": null,
+          "gradoFormacion": [],
+          "formacionOcupacional": null,
+          "unidad": null,
+          "jefeInmediato": null,
+          "cargo": null,
+          "nivelSalarial": null,
+          "contrato": {
+            "categoria": null,
+            "tipo": null,
+            "subtipo": null,
+            "fechaInicio": null,
+            "fechaFinalizacion": null
+          }
+        },
+        "objetivoGeneralPuesto": null,
+        "descripcionFunciones": {
+          "principales": [
+            {
+              "descripcion": null,
+              "contempladaEnManual": null,
+              "frecuencia": null
+            }
+          ],
+          "secundarias": [
+            {
+              "descripcion": null,
+              "contempladaEnManual": null,
+              "frecuencia": null
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

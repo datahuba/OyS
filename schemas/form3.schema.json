@@ -1,0 +1,34 @@
+{
+  "procesosFacultad": {
+    "nombreFacultad": null,
+    "totalProcesos": 0,
+    "procesosProcedimientos": [
+    {
+        "datosUnidadOrganizacional": {
+        "nombre": null,
+        "dependencia": null
+        },
+        "datosDelProceso": {
+        "nombreProceso": null,
+        "objetivo": null,
+        "productoOResultado": null,
+        "insumos": [],
+        "sustentoLegal": null
+        },
+        "cuadroDeProcedimientos": [
+        {
+            "paso": null,
+            "actividad": null,
+            "responsable": {
+            "cargo": null,
+            "unidad": null
+            },
+            "cantidadFuncionarios": null,
+            "tiempoRequerido": null,
+            "instrumentoOProducto": null
+        }
+        ]
+    }
+    ]
+}
+}

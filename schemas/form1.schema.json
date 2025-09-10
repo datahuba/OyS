@@ -1,0 +1,186 @@
+{
+  "analisisOrganizacional": {
+    "nombreUnidad": null,
+    "primeraParte": {
+      "analisisRetrospectivo": {
+        "datosUnidad": {
+          "nombre": null,
+          "ubicacion": null,
+          "telefono": null,
+          "email": null,
+          "reseñaHistorica": null,
+          "carreras": [
+            {
+              "nombre": null,
+              "numeroDocentes": null,
+              "numeroEstudiantes": null,
+              "enProcesoAutoevaluacion": null,
+              "acreditacionesNacionales": [],
+              "acreditacionesInternacionales": [],
+              "sinProcesos": null
+            }
+          ],
+          "normativa": null
+        },
+        "filosofiaInstitucional": {
+          "mision": null,
+          "vision": null,
+          "objetivoGeneral": null,
+          "objetivosEspecificos": [],
+          "funciones": []
+        },
+        "personalAdministrativo": {
+          "nomina": [
+            {
+              "funcionario": null,
+              "codigoNivel": null,
+              "formacionProfesional": null,
+              "gradoFormacion": null,
+              "area": null,
+              "cargo": null,
+              "tipoContrato": null,
+              "tieneManualFunciones": null
+            }
+          ],
+          "numeroFuncionariosAdecuadoPOA": null,
+          "argumentoNumeroFuncionarios": null
+        },
+        "interrelaciones": {
+          "internas": [
+            {
+              "entidad": null,
+              "motivo": null
+            }
+          ],
+          "externas": [
+            {
+              "entidad": null,
+              "motivo": null
+            }
+          ]
+        },
+        "evaluacionGestionPOAAnterior": {
+          "cumplimientoFisico": null,
+          "cumplimientoFinanciero": null,
+          "dificultades": null,
+          "actividadesDefinidas": null,
+          "actividadesConocidasPorEquipo": null
+        },
+        "productosServiciosUsuarios": {
+          "primarios": [
+            {
+              "servicio": null,
+              "areaResponsable": null,
+              "usuarios": null
+            }
+          ],
+          "secundarios": [
+            {
+              "servicio": null,
+              "areaResponsable": null,
+              "usuarios": null
+            }
+          ],
+          "analisisDetallado": [
+            {
+              "nombre": null,
+              "calidad": null,
+              "argumentoCalidad": null,
+              "cantidad": null,
+              "argumentoCantidad": null,
+              "cobertura": {
+                "internas": [],
+                "externas": []
+              },
+              "oportunidad": null,
+              "argumentoOportunidad": null,
+              "frecuencia": null,
+              "satisfaccion": null
+            }
+          ]
+        },
+        "procesosYProcedimientos": {
+          "tieneProcesosInformales": null,
+          "tieneManualFormal": null,
+          "paraAlgunosProcesos": null,
+          "principales": [],
+          "secundarios": [],
+          "resultadosRelacionadosConPOA": null,
+          "procesosFueronObstaculos": null,
+          "explicacionObstaculos": null,
+          "permitieronServiciosEficientes": null
+        },
+        "unidadesYAreasOrganizacionales": {
+          "organigrama": null,
+          "funcionesRelacionadasConProcesos": {
+            "respuesta": null,
+            "justificacion": null
+          },
+          "existeDuplicidad": {
+            "respuesta": null,
+            "justificacion": null
+          },
+          "seRealizanFuncionesNoCorrespondientes": {
+            "respuesta": null,
+            "justificacion": null
+          },
+          "limiteAutoridadDefinido": {
+            "respuesta": null,
+            "justificacion": null
+          },
+          "ubicacionJerarquicaCorrecta": {
+            "respuesta": null,
+            "justificacion": null
+          }
+        },
+        "canalesDeComunicacion": {
+          "canales": [],
+          "formalmenteEstablecidos": null,
+          "calidadInformacion": {
+            "oportuna": null,
+            "clara": null,
+            "confiable": null,
+            "argumento": null
+          },
+          "problemasDetectados": []
+        },
+        "conclusionesAnalisisRetrospectivo": {
+          "influenciaEstructura": null,
+          "explicacionNegativa": null,
+          "explicacionPositiva": null
+        }
+      }
+    },
+    "segundaParte": {
+      "analisisProspectivo": {
+        "programaOperativoAnualSiguienteGestion": {
+          "nuevosObjetivos": [
+            {
+              "objetivo": null,
+              "responsables": null
+            }
+          ]
+        },
+        "naturalezaYVolumenOperaciones": {
+          "nuevosProductos": [],
+          "naturaleza": [],
+          "volumenAumento": null,
+          "volumenDisminucion": null,
+          "presupuestoProgramado": null,
+          "modalidad": []
+        },
+        "conclusionesAnalisisProspectivo": {
+          "necesitaRediseño": null,
+          "justificacion": null
+        }
+      }
+    },
+    "terceraParte": {
+      "resultadosAnalisisOrganizacional": {
+        "decisionesFuturas": [],
+        "justificacionCambios": null,
+        "propuestaEstructura": null
+      }
+    }
+  }
+}

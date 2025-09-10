@@ -340,6 +340,61 @@ const extractTextFromFile = async (file) => {
     }
     return text;
 };
+
+const processAndFillForm = async (file, formType) => {
+  console.log(`[JSON Extractor] Iniciando para el formulario tipo: ${formType}`);
+
+  try {
+    const textContent = await extractTextFromFile(file);
+    if (!textContent || !textContent.trim()) {
+      throw new Error("No se pudo extraer contenido del archivo o está vacío.");
+    }
+
+    // Cargar el prompt
+    const promptKey = `GEMINI_PROMPT_${formType.toUpperCase()}`;
+    // Cargar esquema JSON
+    const schemaPath = path.join(__dirname, 'schemas', `${formType}.schema.json`);
+    const [promptTemplate, schemaFileContent] = await Promise.all([process.env[promptKey],fs.promises.readFile(schemaPath, 'utf8')]);
+        if (!promptTemplate) {
+        throw new Error(`El prompt para ${formType} no se encontró en el archivo .env`);
+    }
+
+    // Armar promp con pedazos
+    let finalPrompt = promptTemplate.replace('__JSON_SCHEMA__', schemaFileContent);
+    finalPrompt = finalPrompt.replace('__TEXT_TO_PROCESS__', textContent);
+
+    // API
+    console.log(`[JSON Extractor] Enviando prompt para ${formType} a la API...`);
+    const extractionModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+    const result = await extractionModel.generateContent(finalPrompt);
+    const responseText = result.response.text();
+
+    // Limpiar respuesta
+    const cleanedText = responseText.replace(/^```json\n?/, '').replace(/```$/, '');
+    
+    try {
+      const jsonData = JSON.parse(cleanedText);
+      console.log(`[JSON Extractor] ¡JSON para ${formType} parseado con éxito!`);
+      return jsonData;
+    } catch (parseError) {
+      console.error("[JSON Extractor] Error fatal: La respuesta de la IA no es un JSON válido.", parseError);
+      console.log("[JSON Extractor] Respuesta recibida de la IA:", cleanedText);
+      throw new Error("La respuesta de la IA no pudo ser parseada como JSON.");
+    }
+
+  } catch (error) {
+    console.error(`[JSON Extractor] Error durante el procesamiento del ${formType}:`, error.message);
+    throw error; 
+  }
+};
+
+
+
+
+
+
+
+
 const getEmbedding = async (text) => { const result = await embeddingModel.embedContent(text); return result.embedding.values; };
 const chunkDocument = (text, chunkSize = 1000, overlap = 200) => { const chunks = []; for (let i = 0; i < text.length; i += chunkSize - overlap) { chunks.push(text.substring(i, i + chunkSize)); } return chunks; };
 const cosineSimilarity = (vecA, vecB) => { let dotProduct = 0, magA = 0, magB = 0; for(let i=0;i<vecA.length;i++){ dotProduct += vecA[i]*vecB[i]; magA += vecA[i]*vecA[i]; magB += vecB[i]*vecB[i]; } magA = Math.sqrt(magA); magB = Math.sqrt(magB); if(magA===0||magB===0)return 0; return dotProduct/(magA*magB); };
@@ -655,6 +710,40 @@ app.post('/api/chat', protect, async (req, res) => {
         res.status(500).json({ message: "Error inesperado en el servidor." });
     }
 });
+
+app.post('/api/extract-json', protect, upload, async (req, res) => {
+    const { formType } = req.body;
+
+    if (!req.files || req.files.length === 0) {
+        return res.status(400).json({ message: 'No se han subido archivos.' });
+    }
+    if (req.files.length > 1) {
+        // Solo 1 archivo
+        return res.status(400).json({ message: 'Por favor, sube solo un archivo a la vez para la extracción.' });
+    }
+    if (!formType || !['form1', 'form2', 'form3'].includes(formType)) {
+        return res.status(400).json({ message: 'Se debe especificar un tipo de formulario válido: form1, form2 o form3.' });
+    }
+
+    const file = req.files[0];
+
+    try {
+        console.log(`[API] Solicitud recibida para extraer JSON de ${file.originalname} como ${formType}.`);
+        
+        const filledJson = await processAndFillForm(file, formType);
+        res.status(200).json(filledJson);
+
+    } catch (error) {
+        console.error(`[API] Error en la ruta /api/extract-json:`, error);
+        res.status(500).json({ message: 'Error en el servidor durante la extracción del JSON.', error: error.message });
+    } finally {
+        if (fs.existsSync(file.path)) {
+            fs.unlinkSync(file.path);
+        }
+    }
+});
+
+
 
 // --- INICIAR SERVIDOR ---
 app.listen(PORT, () => console.log(`Servidor backend corriendo en http://localhost:${PORT}`));
