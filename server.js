@@ -15,7 +15,6 @@ const FormData = require('form-data');
 const Chat = require('./models/Chat'); 
 const { protect } = require('./middleware/authMiddleware');
 const userRoutes = require('./routes/userRoutes');
-const Chat = require('./models/Chat');
 const GlobalDocument = require('./models/GlobalDocuments');
 const app = express();
 const PORT = process.env.PORT || 5000;
