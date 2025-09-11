@@ -689,7 +689,7 @@ app.post('/api/extract-json', protect, upload, async (req, res) => {
         // El 'finally' se mantiene para borrar el archivo temporal de /uploads
         if (fs.existsSync(file.path)) {
             fs.unlinkSync(file.path);
-        }-
+        }
     }
 });
 
