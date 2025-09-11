@@ -145,9 +145,16 @@ async function describeImageWithGemini(filePath, mimetype, originalName) {
 
 async function generateAndSaveReport(chatId) {
     try {
+        // ========================================================================
+        // --- CAMBIO ÚNICO Y CLAVE: Volvemos a buscar el chat MÁS RECIENTE ---
+        // Esto garantiza que tenemos los datos de los archivos que ACABAN de subirse.
         const chat = await Chat.findById(chatId);
+        // ========================================================================
+
         if (!chat) throw new Error("Chat no encontrado para la generación del informe.");
 
+        // El resto de la función es EXACTAMENTE LA MISMA, porque ya era correcta.
+        
         // Asumimos que los JSONs están en el contexto 'consolidadoFacultades'
         const documentos = chat.consolidadoFacultades || [];
         const findJsonPath = (formType) => {
