@@ -143,9 +143,9 @@ async function describeImageWithGemini(filePath, mimetype, originalName) {
 //---------------------------------------------------------------------------------------
 // En server.js, junto a tus otras funciones como getEmbedding, etc.
 
-async function generateAndSaveReport(chatId) {
-try {
-        const chat = await Chat.findById(chatId);
+async function generateAndSaveReport(chatId, userQuery) {
+    try {
+        let chat = await Chat.findById(chatId);
         if (!chat) throw new Error("Chat no encontrado para la generación del informe.");
 
         // 1. Leer los JSON directamente desde los campos del chat
@@ -159,7 +159,6 @@ try {
         }
 
         // 2. Construir el Mega-Prompt
-        // Convertimos los objetos JSON a string solo para inyectarlos en el prompt
         const stringForm1 = jsonForm1 ? JSON.stringify(jsonForm1, null, 2) : '"No proporcionado."';
         const stringForm2 = jsonForm2 ? JSON.stringify(jsonForm2, null, 2) : '"No proporcionado."';
         const stringForm3 = jsonForm3 ? JSON.stringify(jsonForm3, null, 2) : '"No proporcionado."';
@@ -175,22 +174,38 @@ try {
             .replace('__JSON_FORM_2__', stringForm2)
             .replace('__JSON_FORM_3__', stringForm3);
 
-        // 3. Llamar a la IA y guardar (esta parte no cambia)
+        // 3. Llamar a la IA
         const result = await generativeModel.generateContent(finalPrompt);
         const generatedReportText = result.response.text();
 
-        await Chat.findByIdAndUpdate(chatId, {
+        // 4. Guardar el informe y los mensajes en la BD
+        const updatedChatWithReport = await Chat.findByIdAndUpdate(chatId, {
             $set: { informeFinal: generatedReportText },
-            $push: { messages: { sender: 'ai', text: generatedReportText } }
-        });
+            $push: { messages: { $each: [
+                { sender: 'user', text: userQuery },
+                { sender: 'ai', text: generatedReportText }
+            ]}}
+        }, { new: true });
         
         console.log(`[Report Gen] Informe generado y guardado para el Chat ID: ${chatId}`);
 
+        // 5. Devolver el chat actualizado para que la ruta principal lo envíe al frontend
+        return updatedChatWithReport;
+
     } catch (error) {
-        console.error('[Report Gen Background] Error:', error.message);
-        await Chat.findByIdAndUpdate(chatId, {
-            $push: { messages: { sender: 'bot', text: `Ocurrió un error al generar el informe: ${error.message}` } }
-        });
+        console.error('[Report Gen] Error:', error.message);
+        
+        // Guardamos el mensaje de error en el chat
+        const chatWithError = await Chat.findByIdAndUpdate(chatId, {
+            $push: { messages: { $each: [
+                 { sender: 'user', text: userQuery },
+                 { sender: 'bot', text: `Ocurrió un error al generar el informe: ${error.message}` }
+            ]}}
+        }, { new: true });
+        
+        // Devolvemos el chat con el mensaje de error para que el frontend se actualice
+        // y propagamos el error para que la ruta principal sepa que algo falló.
+        throw chatWithError; 
     }
 }
 //---------------------------------------------------------------------------------------
@@ -572,23 +587,27 @@ app.post('/api/chat', protect, async (req, res) => {
             return res.status(200).json({ updatedChat });
         }
 
-        // --- GATILLO PARA GENERAR INFORME ---
+               // --- GATILLO PARA GENERAR INFORME (Lógica Síncrona) ---
         if (userQuery.toLowerCase() === 'generar informe') {
-            const userMessage = { sender: 'user', text: userQuery };
-            const botMessage = { sender: 'bot', text: 'Entendido. Generando el informe de compatibilización. Esto puede tardar un momento...' };
-            
-            // Damos feedback inmediato al usuario
-            await Chat.findByIdAndUpdate(chatId, {
-                $push: { messages: { $each: [userMessage, botMessage] } }
-            });
+            try {
+                console.log(`[Chat API] Gatillo de informe detectado. Esperando a la función...`);
+                
+                // Usamos 'await' para esperar el resultado.
+                const updatedChat = await generateAndSaveReport(chatId, userQuery);
 
-            // Ejecutamos la generación en segundo plano
-            generateAndSaveReport(chatId);
+                // Devolvemos el chat con el informe o con el mensaje de error.
+                return res.status(200).json({ updatedChat: updatedChat });
 
-            const chatForFeedback = await Chat.findById(chatId);
-            return res.status(200).json({ updatedChat: chatForFeedback });
+            } catch (chatWithError) {
+                // Si la función lanza un error, a menudo será el objeto de chat con el mensaje de error.
+                // Si no, es un error del sistema.
+                if (chatWithError && chatWithError.messages) {
+                    return res.status(200).json({ updatedChat: chatWithError });
+                }
+                // Si el error es inesperado, devolvemos un 500.
+                return res.status(500).json({ message: "Error crítico al generar el informe." });
+            }
         }
-
         // --- LÓGICA DE CHAT NORMAL CON RAG ---
         // 1. Obtener documentos relevantes (del chat y globales)
         const documentIds = getDocumentsForActiveContext(currentChat);
