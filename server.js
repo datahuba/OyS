@@ -145,59 +145,71 @@ async function describeImageWithGemini(filePath, mimetype, originalName) {
 
 async function generateAndSaveReport(chatId) {
     try {
-        // ========================================================================
-        // --- CAMBIO ÚNICO Y CLAVE: Volvemos a buscar el chat MÁS RECIENTE ---
-        // Esto garantiza que tenemos los datos de los archivos que ACABAN de subirse.
         const chat = await Chat.findById(chatId);
-        // ========================================================================
-
         if (!chat) throw new Error("Chat no encontrado para la generación del informe.");
 
-        // El resto de la función es EXACTAMENTE LA MISMA, porque ya era correcta.
-        
-        // Asumimos que los JSONs están en el contexto 'consolidadoFacultades'
         const documentos = chat.consolidadoFacultades || [];
         const findJsonPath = (formType) => {
             const doc = documentos.find(d => d.metadata?.formType === formType);
             return doc ? doc.metadata.jsonPath : null;
         };
-        const [pathForm1, pathForm2, pathForm3] = [findJsonPath('form1'), findJsonPath('form2'), findJsonPath('form3')];
 
-        if (!pathForm1 || !pathForm2 || !pathForm3) {
-            throw new Error('Faltan los 3 archivos de formulario JSON necesarios en este chat.');
+        const pathForm1 = findJsonPath('form1');
+        const pathForm2 = findJsonPath('form2');
+        const pathForm3 = findJsonPath('form3');
+
+        // ========================================================================
+        // --- 1. VALIDACIÓN MODIFICADA ---
+        // Ahora, solo lanzamos un error si NO se encuentra NINGÚN archivo de formulario.
+        // ========================================================================
+        if (!pathForm1 && !pathForm2 && !pathForm3) {
+            throw new Error('No se ha subido ningún archivo de formulario para analizar.');
         }
 
+        // ========================================================================
+        // --- 2. LECTURA DE ARCHIVOS MODIFICADA ---
+        // Leemos los archivos de forma condicional. Si una ruta es null, el resultado será null.
+        // Usamos Promise.resolve(null) para que Promise.all no falle con rutas nulas.
+        // ========================================================================
         const [jsonForm1, jsonForm2, jsonForm3] = await Promise.all([
-            fs.promises.readFile(pathForm1, 'utf8'),
-            fs.promises.readFile(pathForm2, 'utf8'),
-            fs.promises.readFile(pathForm3, 'utf8')
+            pathForm1 ? fs.promises.readFile(pathForm1, 'utf8') : Promise.resolve(null),
+            pathForm2 ? fs.promises.readFile(pathForm2, 'utf8') : Promise.resolve(null),
+            pathForm3 ? fs.promises.readFile(pathForm3, 'utf8') : Promise.resolve(null)
         ]);
         
+        // 3. Construir el Mega-Prompt
         let promptTemplate = process.env.PROMPT_GENERAR_INFORME;
-        const nombreUnidad = JSON.parse(jsonForm1)?.analisisOrganizacional?.nombreUnidad || 'Unidad No Especificada';
+        
+        // Obtenemos el nombre de la unidad de forma segura, solo si el form1 existe.
+        const nombreUnidad = jsonForm1 ? (JSON.parse(jsonForm1)?.analisisOrganizacional?.nombreUnidad || 'Unidad No Especificada') : 'Unidad No Especificada';
         const mesAnio = new Date().toLocaleString('es-ES', { month: 'long', year: 'numeric' });
 
+        // ========================================================================
+        // --- 4. CONSTRUCCIÓN DE PROMPT MODIFICADA ---
+        // Si un JSON es nulo, lo reemplazamos con un texto claro que indica que no fue proporcionado.
+        // Esto le enseña a la IA a manejar la ausencia de datos.
+        // ========================================================================
         let finalPrompt = promptTemplate
             .replace('__NOMBRE_UNIDAD__', nombreUnidad)
             .replace('__MES_ANIO__', mesAnio.charAt(0).toUpperCase() + mesAnio.slice(1))
-            .replace('__JSON_FORM_1__', jsonForm1)
-            .replace('__JSON_FORM_2__', jsonForm2)
-            .replace('__JSON_FORM_3__', jsonForm3);
+            .replace('__JSON_FORM_1__', jsonForm1 || '"No proporcionado."')
+            .replace('__JSON_FORM_2__', jsonForm2 || '"No proporcionado."')
+            .replace('__JSON_FORM_3__', jsonForm3 || '"No proporcionado."');
 
+        // El resto de la función (llamada a la IA y guardado) no cambia.
+        
         const result = await generativeModel.generateContent(finalPrompt);
         const generatedReportText = result.response.text();
 
-        // Guardamos el informe y lo añadimos como un nuevo mensaje
         await Chat.findByIdAndUpdate(chatId, {
             $set: { informeFinal: generatedReportText },
             $push: { messages: { sender: 'ai', text: generatedReportText } }
         });
         
-        console.log(`[Report Gen] Informe generado y guardado para el Chat ID: ${chatId}`);
+        console.log(`[Report Gen] Informe (parcial o completo) generado y guardado para el Chat ID: ${chatId}`);
 
     } catch (error) {
         console.error('[Report Gen Background] Error:', error.message);
-        // Informamos al usuario del error en el chat
         await Chat.findByIdAndUpdate(chatId, {
             $push: { messages: { sender: 'bot', text: `Ocurrió un error al generar el informe: ${error.message}` } }
         });
