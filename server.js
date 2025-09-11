@@ -157,7 +157,7 @@ async function generateAndSaveReport(chatId) {
         const pathForm1 = findJsonPath('form1');
         const pathForm2 = findJsonPath('form2');
         const pathForm3 = findJsonPath('form3');
-
+        console.log(pathForm1);
         // ========================================================================
         // --- 1. VALIDACIÓN MODIFICADA ---
         // Ahora, solo lanzamos un error si NO se encuentra NINGÚN archivo de formulario.
@@ -176,7 +176,7 @@ async function generateAndSaveReport(chatId) {
             pathForm2 ? fs.promises.readFile(pathForm2, 'utf8') : Promise.resolve(null),
             pathForm3 ? fs.promises.readFile(pathForm3, 'utf8') : Promise.resolve(null)
         ]);
-        console.log(pathForm1);
+        
         // 3. Construir el Mega-Prompt
         let promptTemplate = process.env.PROMPT_GENERAR_INFORME;
         
