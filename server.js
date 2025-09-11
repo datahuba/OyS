@@ -144,60 +144,38 @@ async function describeImageWithGemini(filePath, mimetype, originalName) {
 // En server.js, junto a tus otras funciones como getEmbedding, etc.
 
 async function generateAndSaveReport(chatId) {
-    try {
+try {
         const chat = await Chat.findById(chatId);
         if (!chat) throw new Error("Chat no encontrado para la generación del informe.");
 
-        const documentos = chat.consolidadoFacultades || [];
-        const findJsonPath = (formType) => {
-            const doc = documentos.find(d => d.metadata?.formType === formType);
-            return doc ? doc.metadata.jsonPath : null;
-        };
+        // 1. Leer los JSON directamente desde los campos del chat
+        const jsonForm1 = chat.formulario1Data;
+        const jsonForm2 = chat.formulario2Data;
+        const jsonForm3 = chat.formulario3Data;
 
-        const pathForm1 = findJsonPath('form1');
-        const pathForm2 = findJsonPath('form2');
-        const pathForm3 = findJsonPath('form3');
-        console.log(pathForm1);
-        // ========================================================================
-        // --- 1. VALIDACIÓN MODIFICADA ---
-        // Ahora, solo lanzamos un error si NO se encuentra NINGÚN archivo de formulario.
-        // ========================================================================
-        if (!pathForm1 || !pathForm2 || !pathForm3) {
+        // Versión flexible: solo falla si no hay NINGÚN dato
+        if (!jsonForm1 && !jsonForm2 && !jsonForm3) {
             throw new Error('No se ha subido ningún archivo de formulario para analizar.');
         }
 
-        // ========================================================================
-        // --- 2. LECTURA DE ARCHIVOS MODIFICADA ---
-        // Leemos los archivos de forma condicional. Si una ruta es null, el resultado será null.
-        // Usamos Promise.resolve(null) para que Promise.all no falle con rutas nulas.
-        // ========================================================================
-        const [jsonForm1, jsonForm2, jsonForm3] = await Promise.all([
-            pathForm1 ? fs.promises.readFile(pathForm1, 'utf8') : Promise.resolve(null),
-            pathForm2 ? fs.promises.readFile(pathForm2, 'utf8') : Promise.resolve(null),
-            pathForm3 ? fs.promises.readFile(pathForm3, 'utf8') : Promise.resolve(null)
-        ]);
-        
-        // 3. Construir el Mega-Prompt
+        // 2. Construir el Mega-Prompt
+        // Convertimos los objetos JSON a string solo para inyectarlos en el prompt
+        const stringForm1 = jsonForm1 ? JSON.stringify(jsonForm1, null, 2) : '"No proporcionado."';
+        const stringForm2 = jsonForm2 ? JSON.stringify(jsonForm2, null, 2) : '"No proporcionado."';
+        const stringForm3 = jsonForm3 ? JSON.stringify(jsonForm3, null, 2) : '"No proporcionado."';
+
         let promptTemplate = process.env.PROMPT_GENERAR_INFORME;
-        
-        // Obtenemos el nombre de la unidad de forma segura, solo si el form1 existe.
-        const nombreUnidad = jsonForm1 ? (JSON.parse(jsonForm1)?.analisisOrganizacional?.nombreUnidad || 'Unidad No Especificada') : 'Unidad No Especificada';
+        const nombreUnidad = jsonForm1?.analisisOrganizacional?.nombreUnidad || 'Unidad No Especificada';
         const mesAnio = new Date().toLocaleString('es-ES', { month: 'long', year: 'numeric' });
 
-        // ========================================================================
-        // --- 4. CONSTRUCCIÓN DE PROMPT MODIFICADA ---
-        // Si un JSON es nulo, lo reemplazamos con un texto claro que indica que no fue proporcionado.
-        // Esto le enseña a la IA a manejar la ausencia de datos.
-        // ========================================================================
         let finalPrompt = promptTemplate
             .replace('__NOMBRE_UNIDAD__', nombreUnidad)
             .replace('__MES_ANIO__', mesAnio.charAt(0).toUpperCase() + mesAnio.slice(1))
-            .replace('__JSON_FORM_1__', jsonForm1 || '"No proporcionado."')
-            .replace('__JSON_FORM_2__', jsonForm2 || '"No proporcionado."')
-            .replace('__JSON_FORM_3__', jsonForm3 || '"No proporcionado."');
+            .replace('__JSON_FORM_1__', stringForm1)
+            .replace('__JSON_FORM_2__', stringForm2)
+            .replace('__JSON_FORM_3__', stringForm3);
 
-        // El resto de la función (llamada a la IA y guardado) no cambia.
-        
+        // 3. Llamar a la IA y guardar (esta parte no cambia)
         const result = await generativeModel.generateContent(finalPrompt);
         const generatedReportText = result.response.text();
 
@@ -206,7 +184,7 @@ async function generateAndSaveReport(chatId) {
             $push: { messages: { sender: 'ai', text: generatedReportText } }
         });
         
-        console.log(`[Report Gen] Informe (parcial o completo) generado y guardado para el Chat ID: ${chatId}`);
+        console.log(`[Report Gen] Informe generado y guardado para el Chat ID: ${chatId}`);
 
     } catch (error) {
         console.error('[Report Gen Background] Error:', error.message);
@@ -674,66 +652,44 @@ app.post('/api/extract-json', protect, upload, async (req, res) => {
     try {
         console.log(`[API] Extrayendo JSON de ${file.originalname} para el Chat ID: ${chatId}`);
         
-        // 2. Extraemos el JSON (esto no cambia)
+        // 1. Extraemos el JSON (esto no cambia)
         const filledJson = await processAndFillForm(file, formType);
 
-        // --- 3. Lógica de Guardado (EL GRAN CAMBIO) ---
+        // 2. Lógica de Guardado en MongoDB
+        // Creamos el nombre del campo dinámicamente (ej. 'formulario1Data')
+        const updateField = `formulario${formType.slice(-1)}Data`; 
 
-        // a) Creamos un nombre de archivo único para el JSON de salida
-        const outputFilename = `analisis_${chatId}_${formType}_${Date.now()}.json`;
-        const outputPath = path.join(__dirname, 'json_outputs', outputFilename);
-
-        // b) Guardamos el objeto JSON como un archivo en el servidor
-        await fs.promises.writeFile(outputPath, JSON.stringify(filledJson, null, 2));
-        console.log(`[Storage] JSON extraído guardado en: ${outputPath}`);
-
-        // c) Creamos el objeto de metadatos para guardar en MongoDB
-        const jsonDocumentMetadata = {
-            // Usamos un 'documentId' especial para diferenciarlo de los de Pinecone
-            documentId: `json_output_${outputFilename}`, 
-            originalName: file.originalname,
-            // Guardamos metadatos adicionales que serán útiles
-            metadata: {
-                formType: formType,
-                jsonPath: outputPath // La ruta donde está el archivo JSON
-            },
-            chunkCount: 1 // Un archivo JSON es una sola "unidad"
-        };
-        
-        // d) Encontramos el chat y añadimos estos metadatos al array del contexto activo
-        const chat = await Chat.findById(chatId);
-        if (!chat) {
-            return res.status(404).json({ message: "No se encontró el Chat para actualizar." });
-        }
-        
-        // El frontend nos dice que esta tarea es parte de 'consolidadoFacultades'
-        const activeContextKey = 'consolidadoFacultades'; 
-        
         const updatedChat = await Chat.findByIdAndUpdate(
             chatId,
-            { 
-                $push: { 
-                    [activeContextKey]: jsonDocumentMetadata,
+            {
+                // Usamos $set para establecer o reemplazar el contenido del campo
+                $set: { [updateField]: filledJson }, 
+                // También añadimos un mensaje de confirmación al chat
+                $push: {
                     messages: {
                         sender: 'bot',
-                        text: `Archivo de formulario "${file.originalname}" procesado y sus datos estructurados han sido guardados.`
+                        text: `Datos de "${file.originalname}" (${formType}) procesados y guardados en la base de datos.`
                     }
-                } 
+                }
             },
-            { new: true }
+            { new: true } // Para que nos devuelva el documento ya actualizado
         );
 
-        // 4. Devolvemos la respuesta EXACTA que el frontend espera
+        if (!updatedChat) {
+            return res.status(404).json({ message: "No se encontró el Chat para actualizar." });
+        }
+
+        // 3. Devolvemos la respuesta que el frontend espera
         res.status(200).json({ updatedChat: updatedChat });
 
     } catch (error) {
         console.error(`[API] Error en la ruta /api/extract-json:`, error);
         res.status(500).json({ message: 'Error en el servidor durante la extracción del JSON.', error: error.message });
     } finally {
-        // Limpiamos el archivo TEMPORAL de la carpeta /uploads
+        // El 'finally' se mantiene para borrar el archivo temporal de /uploads
         if (fs.existsSync(file.path)) {
             fs.unlinkSync(file.path);
-        }
+        }-
     }
 });
 

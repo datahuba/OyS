@@ -76,14 +76,25 @@ const chatSchema = new mongoose.Schema({
     type: [documentDetailSchema],
     default: [],
   },
-
+formulario1Data: {
+    type: mongoose.Schema.Types.Mixed, // 'Mixed' permite guardar cualquier objeto JSON
+    default: null
+  },
+  formulario2Data: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+  formulario3Data: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
   // --- RELACIÓN CON EL USUARIO ---
   userId: { 
     type: mongoose.Schema.Types.ObjectId, 
     required: true, 
     ref: 'User' // Esto crea una referencia al modelo de Usuario
   },
- informeFinal: { type: String, default: '' }
+
   
 }, { timestamps: true }); // timestamps: true añade automáticamente los campos createdAt y updatedAt.
 
