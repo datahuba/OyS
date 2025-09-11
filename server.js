@@ -70,87 +70,15 @@ app.use('/api/users', userRoutes);
 
 // --- LÓGICA DE DETECCIÓN DE CONTEXTO POR EMBEDDINGS ---
 const SIMILARITY_THRESHOLD = 0.9;
-const CONTEXT_TRIGGERS = [
-    {
-        contextName: 'compatibilizacionFacultades',
-        triggerPhrase: 'compatibilizacion de facultades',
-        responseMessage: 'Hola, soy tu agente especialista en Compatibilización de Facultades. ¿Cómo puedo ayudarte hoy?',
-        promptEnvVar: 'PROMPT_COMPATIBILIZACION_FACULTADES' // <-- NUEVO
-    },
-    {
-        contextName: 'consolidadoFacultades',
-        triggerPhrase: 'consolidado de facultades',
-        responseMessage: 'Hola, soy tu agente especialista en Consolidado de Facultades. ¿Cómo puedo ayudarte hoy',
-        promptEnvVar: 'PROMPT_CONSOLIDADO_FACULTADES' // <-- NUEVO
-    },
-    {
-        contextName: 'compatibilizacionAdministrativo',
-        triggerPhrase: 'compatibilizacion administrativo',
-        responseMessage: 'Hola, soy tu agente especialista en Compatibilización Administrativa. ¿Cómo puedo ayudarte hoy',
-        promptEnvVar: 'PROMPT_COMPATIBILIZACION_ADMINISTRATIVO' // <-- NUEVO
-    },
-    {
-        contextName: 'consolidadoAdministrativo',
-        triggerPhrase: 'consolidado administrativo',
-        responseMessage: 'Hola, soy tu agente especialista en Consolidado Administrativo. ¿Cómo puedo ayudarte hoy',
-        promptEnvVar: 'PROMPT_CONSOLIDADO_ADMINISTRATIVO' // <-- NUEVO
-    },
-    {
-        contextName: 'miscellaneous', // Este no tiene tarea especial
-        triggerPhrase: 'volver a chat',
-        responseMessage: 'Bienvenido de vuelta. Soy un modelo de Inteligencia Artificial entrenado para asistirte en tus tareas. ¿Qué quieres hacer hoy?'
-        // Sin promptEnvVar
-    }
-];
-let triggerEmbeddings = {};
-(async () => {
-    try {
-        console.log("Pre-calculando embeddings para las frases de activación de contexto...");
-        for (const trigger of CONTEXT_TRIGGERS) {
-            const result = await embeddingModel.embedContent(trigger.triggerPhrase);
-            triggerEmbeddings[trigger.contextName] = {
-                embedding: result.embedding.values,
-                responseMessage: trigger.responseMessage
-            };
-        }
-        console.log("Embeddings de contexto calculados exitosamente.");
-    } catch (error) {
-        console.error("Error crítico: no se pudo pre-calcular los embeddings de activación.", error);
-    }
-})();
+
+
 
 
 const upload = multer({ dest: 'uploads/' }).array('files', 10);
 
 // --- SUBPROCESOS Y FUNCIONES AUXILIARES ---
 
-async function detectAndHandleContextSwitch(chat, userQuery, res) {
-    const userQueryEmbedding = await getEmbedding(userQuery);
-    for (const contextName in triggerEmbeddings) {
-        const trigger = triggerEmbeddings[contextName];
-        const similarity = cosineSimilarity(userQueryEmbedding, trigger.embedding);
-        if (similarity > SIMILARITY_THRESHOLD && chat.activeContext !== contextName) {
-            try {
-                console.log(`✅ Intención detectada en [${chat._id}]: Cambiar contexto a -> ${contextName}`);
-                const updatedChat = await Chat.findByIdAndUpdate(chat._id, {
-                    activeContext: contextName,
-                    $push: { messages: { $each: [
-                        { sender: 'user', text: userQuery },
-                        { sender: 'ai', text: trigger.responseMessage }
-                    ]}}
-                }, { new: true });
 
-                res.status(200).json({ updatedChat });
-                return true;
-            } catch (dbError) {
-                console.error("Error al cambiar el contexto del chat:", dbError);
-                res.status(500).json({ message: "Error al procesar el cambio de contexto." });
-                return true;
-            }
-        }
-    }
-    return false;
-}
 
 function getDocumentsForActiveContext(chat) {
     const contextKey = chat.activeContext;
@@ -180,57 +108,7 @@ const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, to
     }
 };
 
-async function handleSpecializedAgentTask(chat, userQuery, res) {
-    const activeContextName = chat.activeContext;
-    console.log(`✅ Tarea Especializada del Agente [${activeContextName}] iniciada para el chat [${chat._id}]`);
-    
-    try {
-        // 1. OBTENER EL PROMPT CORRECTO DESDE LA CONFIGURACIÓN
-        const triggerConfig = CONTEXT_TRIGGERS.find(t => t.contextName === activeContextName);
-        const agentPrompt = process.env[triggerConfig.promptEnvVar];
 
-        if (!agentPrompt) {
-            throw new Error(`El prompt para el agente '${activeContextName}' no está configurado en .env.`);
-        }
-
-        // 2. OBTENER LOS DOCUMENTOS CORRECTOS: los del contexto activo + los globales
-        const agentDocumentIds = getDocumentsForActiveContext(chat);
-        const globalDocs = await GlobalDocument.find({});
-        const globalDocumentIds = globalDocs.map(doc => doc.documentId);
-        const relevantDocumentIds = [...agentDocumentIds, ...globalDocumentIds];
-
-        let contextString = "No se encontró contexto relevante en los documentos.";
-        if (relevantDocumentIds.length > 0) {
-            const queryEmbedding = await getEmbedding(userQuery);
-            const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, relevantDocumentIds, 50);
-            
-            if (relevantChunks.length > 0) {
-                contextString = "--- INICIO DEL CONTEXTO EXTRAÍDO DE DOCUMENTOS ---\n" + relevantChunks.join("\n---\n") + "\n--- FIN DEL CONTEXTO ---";
-            }
-        }
-
-        // 3. CONSTRUIR EL PROMPT FINAL Y LLAMAR A LA IA
-        const finalPrompt = `${agentPrompt}\n\n${contextString}\n\nBasado en lo anterior, responde a la siguiente petición del usuario: "${userQuery}"`;
-        
-        const chatSession = generativeModel.startChat();
-        const result = await chatSession.sendMessage(finalPrompt);
-        const botText = result.response.text();
-
-        // 4. GUARDAR Y RESPONDER
-        const updatedChat = await Chat.findByIdAndUpdate(chat._id, {
-            $push: { messages: { $each: [
-                { sender: 'user', text: userQuery },
-                { sender: 'ai', text: botText }
-            ]}}
-        }, { new: true });
-
-        res.status(200).json({ updatedChat });
-
-    } catch (error) {
-        console.error(`Error durante la tarea del agente [${activeContextName}]:`, error);
-        res.status(500).json({ message: `Ocurrió un error al ejecutar la tarea del agente.` });
-    }
-}
 
 // Función para extraer texto de PDFs con Gemini (nuestro fallback)
 async function extractTextWithGemini(filePath, mimetype) {
@@ -262,8 +140,63 @@ async function describeImageWithGemini(filePath, mimetype, originalName) {
     }
 }
 
+//---------------------------------------------------------------------------------------
+// En server.js, junto a tus otras funciones como getEmbedding, etc.
 
+async function generateAndSaveReport(chatId) {
+    try {
+        const chat = await Chat.findById(chatId);
+        if (!chat) throw new Error("Chat no encontrado para la generación del informe.");
 
+        // Asumimos que los JSONs están en el contexto 'consolidadoFacultades'
+        const documentos = chat.consolidadoFacultades || [];
+        const findJsonPath = (formType) => {
+            const doc = documentos.find(d => d.metadata?.formType === formType);
+            return doc ? doc.metadata.jsonPath : null;
+        };
+        const [pathForm1, pathForm2, pathForm3] = [findJsonPath('form1'), findJsonPath('form2'), findJsonPath('form3')];
+
+        if (!pathForm1 || !pathForm2 || !pathForm3) {
+            throw new Error('Faltan los 3 archivos de formulario JSON necesarios en este chat.');
+        }
+
+        const [jsonForm1, jsonForm2, jsonForm3] = await Promise.all([
+            fs.promises.readFile(pathForm1, 'utf8'),
+            fs.promises.readFile(pathForm2, 'utf8'),
+            fs.promises.readFile(pathForm3, 'utf8')
+        ]);
+        
+        let promptTemplate = process.env.PROMPT_GENERAR_INFORME;
+        const nombreUnidad = JSON.parse(jsonForm1)?.analisisOrganizacional?.nombreUnidad || 'Unidad No Especificada';
+        const mesAnio = new Date().toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+
+        let finalPrompt = promptTemplate
+            .replace('__NOMBRE_UNIDAD__', nombreUnidad)
+            .replace('__MES_ANIO__', mesAnio.charAt(0).toUpperCase() + mesAnio.slice(1))
+            .replace('__JSON_FORM_1__', jsonForm1)
+            .replace('__JSON_FORM_2__', jsonForm2)
+            .replace('__JSON_FORM_3__', jsonForm3);
+
+        const result = await generativeModel.generateContent(finalPrompt);
+        const generatedReportText = result.response.text();
+
+        // Guardamos el informe y lo añadimos como un nuevo mensaje
+        await Chat.findByIdAndUpdate(chatId, {
+            $set: { informeFinal: generatedReportText },
+            $push: { messages: { sender: 'ai', text: generatedReportText } }
+        });
+        
+        console.log(`[Report Gen] Informe generado y guardado para el Chat ID: ${chatId}`);
+
+    } catch (error) {
+        console.error('[Report Gen Background] Error:', error.message);
+        // Informamos al usuario del error en el chat
+        await Chat.findByIdAndUpdate(chatId, {
+            $push: { messages: { sender: 'bot', text: `Ocurrió un error al generar el informe: ${error.message}` } }
+        });
+    }
+}
+//---------------------------------------------------------------------------------------
 const extractTextFromFile = async (file) => {
     const filePath = file.path;
     const clientMimeType = file.mimetype;
@@ -610,6 +543,8 @@ app.post('/api/process-document', protect, upload, async (req, res) => {
     }
 });
 
+
+
 app.post('/api/chat', protect, async (req, res) => {
     const { conversationHistory, chatId } = req.body;
     if (!chatId || !Array.isArray(conversationHistory)) {
@@ -624,52 +559,42 @@ app.post('/api/chat', protect, async (req, res) => {
 
         const userQuery = conversationHistory[conversationHistory.length - 1].parts[0].text;
 
-        // --- NUEVO: LÓGICA DE COMANDOS DE SUPERUSUARIO ---
-       if (userQuery === process.env.SUPERUSER_SECRET && !currentChat.isSuperuserMode) {
-        const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
-        isSuperuserMode: true,
-        $push: { messages: { sender: 'bot', text: 'Modo Superusuario ACTIVADO. Los próximos documentos se subirán a la base de conocimiento global.' }}
-        }, { new: true });
-        res.status(200).json({ updatedChat });
-        return;
+        // --- MANEJO DE COMANDOS DE SUPERUSUARIO ---
+        if (userQuery === process.env.SUPERUSER_SECRET && !currentChat.isSuperuserMode) {
+            const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
+                isSuperuserMode: true,
+                $push: { messages: { sender: 'bot', text: 'Modo Superusuario ACTIVADO.' }}
+            }, { new: true });
+            return res.status(200).json({ updatedChat });
         }
         if (userQuery === "exit" && currentChat.isSuperuserMode) {
-        const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
-            isSuperuserMode: false,
-            $push: { messages: { sender: 'bot', text: 'Modo Superusuario DESACTIVADO. Volviendo al funcionamiento normal del chat.' }}
-        }, { new: true });
-        res.status(200).json({ updatedChat });
-        return;
+            const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
+                isSuperuserMode: false,
+                $push: { messages: { sender: 'bot', text: 'Modo Superusuario DESACTIVADO.' }}
+            }, { new: true });
+            return res.status(200).json({ updatedChat });
         }
 
-        // --- DISPARADOR GENÉRICO PARA TAREAS DE AGENTES ESPECIALIZADOS ---
-        const activeContextName = currentChat.activeContext;
-        const activeTrigger = CONTEXT_TRIGGERS.find(t => t.contextName === activeContextName);
+        // --- GATILLO PARA GENERAR INFORME ---
+        if (userQuery.toLowerCase() === 'generar informe') {
+            const userMessage = { sender: 'user', text: userQuery };
+            const botMessage = { sender: 'bot', text: 'Entendido. Generando el informe de compatibilización. Esto puede tardar un momento...' };
+            
+            // Damos feedback inmediato al usuario
+            await Chat.findByIdAndUpdate(chatId, {
+                $push: { messages: { $each: [userMessage, botMessage] } }
+            });
 
-        // Comprobamos si el contexto activo TIENE una tarea especial (no es 'miscellaneous')
-        if (activeTrigger && activeTrigger.promptEnvVar) {
-            const userQueryEmbedding = await getEmbedding(userQuery);
-            const agentTriggerEmbedding = triggerEmbeddings[activeContextName].embedding;
-            const similarity = cosineSimilarity(userQueryEmbedding, agentTriggerEmbedding);
+            // Ejecutamos la generación en segundo plano
+            generateAndSaveReport(chatId);
 
-            // Si la intención es OTRA VEZ la del agente activo, activamos la tarea especial
-            if (similarity > SIMILARITY_THRESHOLD) {
-                await handleSpecializedAgentTask(currentChat, userQuery, res); // Llamamos a la nueva función genérica
-                return; // Termina la ejecución aquí
-            }
+            const chatForFeedback = await Chat.findById(chatId);
+            return res.status(200).json({ updatedChat: chatForFeedback });
         }
 
-        // --- SUBPROCESO 1: Intentar cambiar el contexto ---
-        const contextWasSwitched = await detectAndHandleContextSwitch(currentChat, userQuery, res);
-        if (contextWasSwitched) {
-            return; // La respuesta ya fue enviada por el subproceso, así que terminamos.
-        }
-
-        // --- SI LLEGAMOS AQUÍ, ES UN CHAT NORMAL DENTRO DEL CONTEXTO ACTUAL ---
-        
-        // --- SUBPROCESO 2: Obtener documentos del contexto activo ---
+        // --- LÓGICA DE CHAT NORMAL CON RAG ---
+        // 1. Obtener documentos relevantes (del chat y globales)
         const documentIds = getDocumentsForActiveContext(currentChat);
-        
         const globalDocs = await GlobalDocument.find({});
         const globalDocumentIds = globalDocs.map(doc => doc.documentId);
         const allSearchableIds = [...documentIds, ...globalDocumentIds];
@@ -681,21 +606,15 @@ app.post('/api/chat', protect, async (req, res) => {
             const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, allSearchableIds);
             
             if (relevantChunks.length > 0) {
-                const contextString = `CONTEXTO EXTRAÍDO DE DOCUMENTOS DE "${currentChat.activeContext}":\n---\n` + relevantChunks.join("\n---\n");
+                const contextString = `CONTEXTO EXTRAÍDO DE DOCUMENTOS:\n---\n` + relevantChunks.join("\n---\n");
                 contents.unshift({ role: 'user', parts: [{ text: contextString }] });
             }
         }
 
-        // --- SUBPROCESO 3: Generar respuesta de la IA y guardar en BD ---
-        let botText;
-        try {
-            const chatSession = generativeModel.startChat({ history: contents.slice(0, -1) });
-            const result = await chatSession.sendMessage(userQuery);
-            botText = result.response.text();
-        } catch (geminiError) {
-            console.error("Error con la API de Gemini:", geminiError);
-            return res.status(504).json({ message: `Error con la IA: ${geminiError.message}` });
-        }
+        // 2. Generar respuesta y guardar en BD
+        const chatSession = generativeModel.startChat({ history: contents.slice(0, -1) });
+        const result = await chatSession.sendMessage(userQuery);
+        const botText = result.response.text();
 
         const updatedChat = await Chat.findByIdAndUpdate(chatId, {
             $push: { messages: { $each: [
@@ -707,7 +626,7 @@ app.post('/api/chat', protect, async (req, res) => {
         res.status(200).json({ updatedChat });
 
     } catch (mainError) {
-        console.error("Error inesperado en el servidor:", mainError);
+        console.error("Error inesperado en la ruta /api/chat:", mainError);
         res.status(500).json({ message: "Error inesperado en el servidor." });
     }
 });
@@ -804,7 +723,7 @@ app.post('/api/extract-json', protect, upload, async (req, res) => {
 // ========================================================================
 // --- RUTA PARA GENERAR EL INFORME DE COMPATIBILIZACIÓN ---
 // ========================================================================
-app.post('/api/generate-report', protect, async (req, res) => {
+/*app.post('/api/generate-report', protect, async (req, res) => {
     // El frontend enviará el ID del chat en el que se está trabajando
     const { chatId } = req.body;
 
@@ -881,7 +800,7 @@ app.post('/api/generate-report', protect, async (req, res) => {
         console.error('[Report Gen] Error generando el informe:', error);
         res.status(500).json({ message: 'Error en el servidor al generar el informe.', error: error.message });
     }
-});
+});*/
 
 
 // --- INICIAR SERVIDOR ---
