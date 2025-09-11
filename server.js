@@ -699,7 +699,6 @@ app.post('/api/extract-json', protect, upload, async (req, res) => {
 // --- RUTA PARA GENERAR EL INFORME DE COMPATIBILIZACIÓN ---
 // ========================================================================
 app.post('/api/generate-report', protect, async (req, res) => {
-    // El frontend enviará el ID del chat en el que se está trabajando
     const { chatId } = req.body;
 
     if (!chatId || !mongoose.Types.ObjectId.isValid(chatId)) {
@@ -714,61 +713,55 @@ app.post('/api/generate-report', protect, async (req, res) => {
             return res.status(404).json({ message: 'Chat no encontrado.' });
         }
 
-        // 1. Encontrar las rutas a los archivos JSON que hemos guardado previamente.
-        // Asumimos que los JSON se guardan en el contexto 'consolidadoFacultades'.
+        // 1. Encontrar y leer los archivos JSON
         const documentos = chat.consolidadoFacultades || [];
-        
         const findJsonPath = (formType) => {
             const doc = documentos.find(d => d.metadata?.formType === formType);
-            // La ruta guardada es absoluta en el servidor de Render, así que es segura de usar.
             return doc ? doc.metadata.jsonPath : null;
         };
+        const [pathForm1, pathForm2, pathForm3] = [findJsonPath('form1'), findJsonPath('form2'), findJsonPath('form3')];
 
-        const pathForm1 = findJsonPath('form1');
-        const pathForm2 = findJsonPath('form2');
-        const pathForm3 = findJsonPath('form3');
-
-        if (!pathForm1 || !pathForm2 || !pathForm3) {
-            return res.status(400).json({ message: 'Faltan uno o más archivos de formulario procesados en este chat para generar el informe.' });
+        // Usamos la versión flexible que funciona con 1, 2 o 3 archivos
+        if (!pathForm1 && !pathForm2 && !pathForm3) {
+            return res.status(400).json({ message: 'No se ha subido ningún archivo de formulario para analizar.' });
         }
 
-        // 2. Leer el contenido de los archivos JSON desde el disco del servidor.
         const [jsonForm1, jsonForm2, jsonForm3] = await Promise.all([
-            fs.promises.readFile(pathForm1, 'utf8'),
-            fs.promises.readFile(pathForm2, 'utf8'),
-            fs.promises.readFile(pathForm3, 'utf8')
+            pathForm1 ? fs.promises.readFile(pathForm1, 'utf8') : Promise.resolve(null),
+            pathForm2 ? fs.promises.readFile(pathForm2, 'utf8') : Promise.resolve(null),
+            pathForm3 ? fs.promises.readFile(pathForm3, 'utf8') : Promise.resolve(null)
         ]);
         
-        // 3. Construir el "Mega-Prompt" usando la plantilla del .env.
+        // 2. Construir el Mega-Prompt
         let promptTemplate = process.env.PROMPT_GENERAR_INFORME;
-        const nombreUnidad = JSON.parse(jsonForm1)?.analisisOrganizacional?.nombreUnidad || 'Unidad No Especificada';
+        const nombreUnidad = jsonForm1 ? (JSON.parse(jsonForm1)?.analisisOrganizacional?.nombreUnidad || 'Unidad No Especificada') : 'Unidad No Especificada';
         const mesAnio = new Date().toLocaleString('es-ES', { month: 'long', year: 'numeric' });
 
         let finalPrompt = promptTemplate
             .replace('__NOMBRE_UNIDAD__', nombreUnidad)
             .replace('__MES_ANIO__', mesAnio.charAt(0).toUpperCase() + mesAnio.slice(1))
-            .replace('__JSON_FORM_1__', jsonForm1)
-            .replace('__JSON_FORM_2__', jsonForm2)
-            .replace('__JSON_FORM_3__', jsonForm3);
+            .replace('__JSON_FORM_1__', jsonForm1 || '"No proporcionado."')
+            .replace('__JSON_FORM_2__', jsonForm2 || '"No proporcionado."')
+            .replace('__JSON_FORM_3__', jsonForm3 || '"No proporcionado."');
 
-        // 4. Llamar a la IA para generar el informe.
+        // 3. Llamar a la IA y ESPERAR la respuesta
         console.log("[Report Gen] Enviando prompt final a Gemini...");
         const result = await generativeModel.generateContent(finalPrompt);
         const generatedReportText = result.response.text();
         
-        // 5. Guardar el informe en la BD y añadirlo como un mensaje nuevo.
+        // 4. Guardar el informe en la BD
         const updatedChat = await Chat.findByIdAndUpdate(
             chatId,
             {
-                $set: { informeFinal: generatedReportText }, // Guardamos el informe en su campo dedicado
-                $push: { messages: { sender: 'ai', text: generatedReportText } } // Y lo añadimos a los mensajes para que aparezca en el chat
+                $set: { informeFinal: generatedReportText },
+                $push: { messages: { sender: 'ai', text: generatedReportText } }
             },
-            { new: true } // Para que nos devuelva el documento ya actualizado
+            { new: true }
         );
         
         console.log(`[Report Gen] Informe guardado y añadido como mensaje para el Chat ID: ${chatId}`);
         
-        // 6. Devolver el chat actualizado, que es la respuesta que el frontend ya sabe manejar.
+        // 5. Devolver el chat actualizado al frontend
         res.status(200).json({ updatedChat: updatedChat });
 
     } catch (error) {
@@ -776,7 +769,6 @@ app.post('/api/generate-report', protect, async (req, res) => {
         res.status(500).json({ message: 'Error en el servidor al generar el informe.', error: error.message });
     }
 });
-
 
 // --- INICIAR SERVIDOR ---
 app.listen(PORT, () => console.log(`Servidor backend corriendo en http://localhost:${PORT}`));
