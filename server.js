@@ -176,7 +176,7 @@ async function generateAndSaveReport(chatId) {
             pathForm2 ? fs.promises.readFile(pathForm2, 'utf8') : Promise.resolve(null),
             pathForm3 ? fs.promises.readFile(pathForm3, 'utf8') : Promise.resolve(null)
         ]);
-        
+        console.log(pathForm1);
         // 3. Construir el Mega-Prompt
         let promptTemplate = process.env.PROMPT_GENERAR_INFORME;
         
