@@ -162,7 +162,7 @@ async function generateAndSaveReport(chatId) {
         // --- 1. VALIDACIÓN MODIFICADA ---
         // Ahora, solo lanzamos un error si NO se encuentra NINGÚN archivo de formulario.
         // ========================================================================
-        if (!pathForm1 && !pathForm2 && !pathForm3) {
+        if (!pathForm1 || !pathForm2 || !pathForm3) {
             throw new Error('No se ha subido ningún archivo de formulario para analizar.');
         }
 
