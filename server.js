@@ -723,7 +723,7 @@ app.post('/api/extract-json', protect, upload, async (req, res) => {
 // ========================================================================
 // --- RUTA PARA GENERAR EL INFORME DE COMPATIBILIZACIÓN ---
 // ========================================================================
-/*app.post('/api/generate-report', protect, async (req, res) => {
+app.post('/api/generate-report', protect, async (req, res) => {
     // El frontend enviará el ID del chat en el que se está trabajando
     const { chatId } = req.body;
 
@@ -800,7 +800,7 @@ app.post('/api/extract-json', protect, upload, async (req, res) => {
         console.error('[Report Gen] Error generando el informe:', error);
         res.status(500).json({ message: 'Error en el servidor al generar el informe.', error: error.message });
     }
-});*/
+});
 
 
 // --- INICIAR SERVIDOR ---
