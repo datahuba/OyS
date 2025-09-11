@@ -53,7 +53,7 @@ mongoose.connect(process.env.MONGO_URI)
 const GOOGLE_AI_STUDIO_API_KEY = process.env.GOOGLE_AI_STUDIO_API_KEY;
 const genAI = new GoogleGenerativeAI(GOOGLE_AI_STUDIO_API_KEY);
 const embeddingModel = genAI.getGenerativeModel({ model: "embedding-001" });
-const generativeModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const generativeModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 const visionGenerativeModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
 // <-- CORRECCIÓN: Inicializar Pinecone
