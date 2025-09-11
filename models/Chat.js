@@ -83,6 +83,8 @@ const chatSchema = new mongoose.Schema({
     required: true, 
     ref: 'User' // Esto crea una referencia al modelo de Usuario
   },
+ informeFinal: { type: String, default: '' }
+  
 }, { timestamps: true }); // timestamps: true añade automáticamente los campos createdAt y updatedAt.
 
 module.exports = mongoose.model('Chat', chatSchema);
