@@ -36,3 +36,5 @@ Thumbs.db
 # Configuración de IDEs
 .vscode/
 .idea/
+
+env-vars.yaml
