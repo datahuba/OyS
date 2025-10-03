@@ -669,18 +669,23 @@ app.post('/api/chat', protect, async (req, res) => {
         const allSearchableIds = [...new Set([...documentIds, ...globalDocumentIds])];
         console.log(`[DEBUG] Total de IDs únicos para la búsqueda en Pinecone:`, allSearchableIds);
 
-        let contents = conversationHistory.map(msg => ({ role: msg.role, parts: msg.parts }));
 
         if (allSearchableIds.length > 0) {
             const queryEmbedding = await getEmbedding(userQuery);
             const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, allSearchableIds,20);
-            
+            console.log(`[DEBUG] Se encontraron ${relevantChunks.length} chunks relevantes en Pinecone.`);
             if (relevantChunks.length > 0) {
-                const contextString = `CONTEXTO EXTRAÍDO DE DOCUMENTOS:\n---\n` + relevantChunks.join("\n---\n");
-                contents.unshift({ role: 'user', parts: [{ text: contextString }] });
+                const contextString = "--- INICIO DEL CONTEXTO ---\n" + relevantChunks.join("\n---\n") + "\n--- FIN DEL CONTEXTO ---";
+                const userQueryWithContext = `${contextString}\n\nBasándote **estrictamente** en el contexto anterior, responde a la siguiente pregunta: ${userQuery}`;
+                
+                conversationHistory[conversationHistory.length - 1].parts[0].text = userQueryWithContext;
             }
         }
 
+        const contents = conversationHistory.map(msg => ({
+            role: msg.role,
+            parts: msg.parts
+        }));
         // 2. Generar respuesta y guardar en BD
         const request = {contents: contents,};
         const result = await generativeModel.generateContent(request);
