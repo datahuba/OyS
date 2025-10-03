@@ -450,7 +450,7 @@ app.get('/api/chats/:id', protect, async (req, res) => {
     try {
         const chat = await Chat.findOne({ _id: req.params.id, userId: req.user._id });
         if (!chat) return res.status(404).json({ message: 'Chat no encontrado o no autorizado' });
-        res.json(chat);
+        res.json({ updatedChat: chat });
     } catch (error) { res.status(500).json({ message: 'Error al obtener chat', error: error.message }); }
 });
 
@@ -458,7 +458,7 @@ app.post('/api/chats', protect, async (req, res) => {
     try {
         const newChat = new Chat({ title: 'Nuevo Chat', messages: [], userId: req.user._id });
         await newChat.save();
-        res.status(201).json(newChat);
+        res.status(201).json({ updatedChat: newChat });
     } catch (error) { res.status(500).json({ message: 'Error al crear chat', error: error.message }); }
 });
 
