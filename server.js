@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -55,8 +56,10 @@ mongoose.connect(process.env.MONGO_URI)
 const vertexAI = new VertexAI({ project: 'onlyvertex-474004', location: 'us-central1' });
 // Modelos de Google AI
 const generativeModel = vertexAI.getGenerativeModel({model: 'gemini-2.5-pro',});
-const embeddingModel = vertexAI.getGenerativeModel({model: "embedding-001",});
+//const embeddingModel = vertexAI.getGenerativeModel({model: "embedding-001",});
 
+const genAI_for_embeddings = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_API_KEY);
+const embeddingModel = genAI_for_embeddings.getGenerativeModel({ model: "embedding-001" });
 // <-- CORRECCIÓN: Inicializar Pinecone
 const pinecone = new Pinecone({
     apiKey: process.env.PINECONE_API_KEY,
@@ -108,50 +111,14 @@ const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, to
         return [];
     }
 };
-// --- FUNCIÓN getEmbedding (ACTUALIZADA PARA 768 DIMENSIONES) ---
+// --- FUNCIÓN getEmbedding (VERSIÓN SIMPLE DE AI STUDIO PARA COMPATIBILIDAD) ---
 const getEmbedding = async (text) => {
     try {
-        // 1. Obtenemos las credenciales y el token de acceso (sin cambios aquí)
-        const auth = new GoogleAuth({
-            scopes: 'https://www.googleapis.com/auth/cloud-platform'
-        });
-        const client = await auth.getClient();
-        const accessToken = (await client.getAccessToken()).token;
-
-        // 2. Definimos el endpoint y el cuerpo de la petición.
-        const projectId = process.env.GOOGLE_CLOUD_PROJECT;
-        
-        // --- CAMBIO 1: URL actualizada al modelo correcto ---
-        const url = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/textembedding-gecko001:predict`;
-        
-        // --- CAMBIO 2: Añadimos el objeto 'parameters' al cuerpo de la petición ---
-        const data = {
-            instances: [
-                {
-                    content: text,
-                    taskType: "RETRIEVAL_DOCUMENT", // Usa "RETRIEVAL_QUERY" para las preguntas del usuario
-                }
-            ],
-            parameters: {
-                // Aquí se especifica la dimensionalidad de salida deseada.
-                "outputDimensionality": 768
-            }
-        };
-
-        // 3. Hacemos la llamada a la API con Axios (sin cambios aquí)
-        const response = await axios.post(url, data, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        // 4. Extraemos el embedding de la respuesta (sin cambios aquí)
-        return response.data.predictions[0].embeddings.values;
-
+        const result = await embeddingModel.embedContent(text);
+        return result.embedding.values;
     } catch (error) {
-        console.error("Error al generar embedding (HTTP):", error.response ? error.response.data : error.message);
-        throw new Error("No se pudo generar el embedding.");
+        console.error("Error al generar embedding con AI Studio:", error);
+        throw new Error("No se pudo generar el embedding de compatibilidad.");
     }
 };
 
