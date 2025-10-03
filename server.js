@@ -668,12 +668,12 @@ app.post('/api/chat', protect, async (req, res) => {
         console.log(`[DEBUG] Documentos Globales encontrados en la BD (${globalDocumentIds.length}):`, globalDocumentIds);
         const allSearchableIds = [...new Set([...documentIds, ...globalDocumentIds])];
         console.log(`[DEBUG] Total de IDs únicos para la búsqueda en Pinecone:`, allSearchableIds);
-        
+
         let contents = conversationHistory.map(msg => ({ role: msg.role, parts: msg.parts }));
 
         if (allSearchableIds.length > 0) {
             const queryEmbedding = await getEmbedding(userQuery);
-            const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, allSearchableIds);
+            const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, allSearchableIds,20);
             
             if (relevantChunks.length > 0) {
                 const contextString = `CONTEXTO EXTRAÍDO DE DOCUMENTOS:\n---\n` + relevantChunks.join("\n---\n");
