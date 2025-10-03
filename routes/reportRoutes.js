@@ -78,7 +78,8 @@ for (let i = 0; i < jobs.length; i++) {
 
         // Reemplazar placeholders en el prompt
         for (const formType in datosFormularios) {
-            const placeholder = `__JSON_${formType.toUpperCase()}__`;
+            const placeholder = `_JSON_${formType.toUpperCase()}_`;
+            console.log(placeholder);
             promptTemplate = promptTemplate.replace(placeholder, JSON.stringify(datosFormularios[formType], null, 2));
         }
         console.log(promptTemplate);
