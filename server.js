@@ -122,7 +122,7 @@ const getEmbedding = async (text) => {
         const projectId = process.env.GOOGLE_CLOUD_PROJECT;
         
         // --- CAMBIO 1: URL actualizada al modelo correcto ---
-        const url = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-embedding-001:predict`;
+        const url = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/textembedding-gecko@001:predict`;
         
         // --- CAMBIO 2: Añadimos el objeto 'parameters' al cuerpo de la petición ---
         const data = {
