@@ -5,6 +5,8 @@ const xlsx = require('xlsx');
 const pdf = require('pdf-parse');
 const axios = require('axios');
 const FormData = require('form-data');
+const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
+
 // Función para extraer texto de PDFs con Gemini (nuestro fallback)
 async function extractTextWithGemini(filePath, mimetype, generativeModel) {
     console.log("Fallback: Intentando extracción de PDF con Vertex AI Vision...");

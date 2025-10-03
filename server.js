@@ -108,18 +108,6 @@ const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, to
         return [];
     }
 };
-
-
-
-
-
-
-
-
-
-
-
-
 // --- FUNCIÓN getEmbedding (ACTUALIZADA PARA 768 DIMENSIONES) ---
 const getEmbedding = async (text) => {
     try {
