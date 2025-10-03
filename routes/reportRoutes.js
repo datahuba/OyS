@@ -67,7 +67,7 @@ async function handleReportGeneration(req, res, config) {
             const placeholder = `__JSON_${formType.toUpperCase()}__`;
             promptTemplate = promptTemplate.replace(placeholder, JSON.stringify(datosFormularios[formType], null, 2));
         }
-        
+        console.log(promptTemplate);
         console.log(`[Report Gen Service] Enviando prompt para ${config.reportType}...`);
         const request = { contents: [{ role: 'user', parts: [{ text: promptTemplate }] }] };
         const result = await generativeModel.generateContent(request);
