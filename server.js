@@ -51,7 +51,7 @@ mongoose.connect(process.env.MONGO_URI)
   .catch(err => console.error('Error al conectar a MongoDB:', err));
 
 // --- INICIALIZACIÓN DE SERVICIOS DE IA Y DBs ---
-const vertexAI = new VertexAI({ project: 'onlyVertex', location: 'us-central1' });
+const vertexAI = new VertexAI({ project: 'onlyvertex-474004', location: 'us-central1' });
 // Modelos de Google AI
 const generativeModel = vertexAI.getGenerativeModel({model: 'gemini-2.5-pro',});
 const embeddingModel = vertexAI.getGenerativeModel({model: "embedding-001",});
