@@ -368,7 +368,7 @@ const getEmbedding = async (text) => {
 
         // 2. Definimos el endpoint y el cuerpo de la petición.
         const projectId = process.env.GOOGLE_CLOUD_PROJECT; // Leído desde env-vars.yaml
-        const url = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/text-embedding-004:predict`;
+        const url = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/text-embedding-001:predict`;
         
         const data = {
             instances: [ { content: text, taskType: "RETRIEVAL_DOCUMENT" } ]
