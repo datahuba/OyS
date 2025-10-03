@@ -356,10 +356,10 @@ const processAndFillForm = async (file, formType) => {
 
 
 
-// --- FUNCIÓN getEmbedding (VERSIÓN FINAL CON HTTP DIRECTO) ---
+// --- FUNCIÓN getEmbedding (ACTUALIZADA PARA 768 DIMENSIONES) ---
 const getEmbedding = async (text) => {
     try {
-        // 1. Obtenemos las credenciales y el token de acceso automáticamente.
+        // 1. Obtenemos las credenciales y el token de acceso (sin cambios aquí)
         const auth = new GoogleAuth({
             scopes: 'https://www.googleapis.com/auth/cloud-platform'
         });
@@ -367,14 +367,26 @@ const getEmbedding = async (text) => {
         const accessToken = (await client.getAccessToken()).token;
 
         // 2. Definimos el endpoint y el cuerpo de la petición.
-        const projectId = process.env.GOOGLE_CLOUD_PROJECT; // Leído desde env-vars.yaml
+        const projectId = process.env.GOOGLE_CLOUD_PROJECT;
+        
+        // --- CAMBIO 1: URL actualizada al modelo correcto ---
         const url = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-embedding-001:predict`;
         
+        // --- CAMBIO 2: Añadimos el objeto 'parameters' al cuerpo de la petición ---
         const data = {
-            instances: [ { content: text, taskType: "RETRIEVAL_DOCUMENT" } ]
+            instances: [
+                {
+                    content: text,
+                    taskType: "RETRIEVAL_DOCUMENT", // Usa "RETRIEVAL_QUERY" para las preguntas del usuario
+                }
+            ],
+            parameters: {
+                // Aquí se especifica la dimensionalidad de salida deseada.
+                "outputDimensionality": 768
+            }
         };
 
-        // 3. Hacemos la llamada a la API con Axios.
+        // 3. Hacemos la llamada a la API con Axios (sin cambios aquí)
         const response = await axios.post(url, data, {
             headers: {
                 'Authorization': `Bearer ${accessToken}`,
@@ -382,7 +394,7 @@ const getEmbedding = async (text) => {
             }
         });
 
-        // 4. Extraemos el embedding de la respuesta.
+        // 4. Extraemos el embedding de la respuesta (sin cambios aquí)
         return response.data.predictions[0].embeddings.values;
 
     } catch (error) {
