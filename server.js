@@ -657,13 +657,18 @@ app.post('/api/chat', protect, async (req, res) => {
                 return res.status(500).json({ message: "Error crítico al generar el informe." });
             }
         }
+
+
         // --- LÓGICA DE CHAT NORMAL CON RAG ---
         // 1. Obtener documentos relevantes (del chat y globales)
         const documentIds = getDocumentsForActiveContext(currentChat);
+        console.log(`[DEBUG] Documentos del contexto activo ('${currentChat.activeContext}'):`, documentIds);
         const globalDocs = await GlobalDocument.find({});
         const globalDocumentIds = globalDocs.map(doc => doc.documentId);
-        const allSearchableIds = [...documentIds, ...globalDocumentIds];
-
+        console.log(`[DEBUG] Documentos Globales encontrados en la BD (${globalDocumentIds.length}):`, globalDocumentIds);
+        const allSearchableIds = [...new Set([...documentIds, ...globalDocumentIds])];
+        console.log(`[DEBUG] Total de IDs únicos para la búsqueda en Pinecone:`, allSearchableIds);
+        
         let contents = conversationHistory.map(msg => ({ role: msg.role, parts: msg.parts }));
 
         if (allSearchableIds.length > 0) {
