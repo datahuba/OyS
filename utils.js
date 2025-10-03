@@ -5,8 +5,49 @@ const xlsx = require('xlsx');
 const pdf = require('pdf-parse');
 const axios = require('axios');
 const FormData = require('form-data');
+// Función para extraer texto de PDFs con Gemini (nuestro fallback)
+async function extractTextWithGemini(filePath, mimetype, generativeModel) {
+    console.log("Fallback: Intentando extracción de PDF con Vertex AI Vision...");
+    const fileBuffer = fs.readFileSync(filePath);
+    const filePart = { inlineData: { data: fileBuffer.toString("base64"), mimeType: mimetype } };
+    const prompt = "Extrae todo el texto de este documento. Devuelve únicamente el texto plano, sin ningún formato adicional, como si lo copiaras y pegaras. No resumas nada.";
+    
+    // El request debe tener un formato específico para Vertex AI
+    const request = {
+        contents: [{ role: 'user', parts: [ {text: prompt}, filePart ] }],
+    };
 
-async function extractTextFromFile(file){
+    try {
+        const result = await generativeModel.generateContent(request);
+        // La estructura de la respuesta también cambia
+        return result.response.candidates[0].content.parts[0].text;
+    } catch (error) {
+        console.error('Error detallado de la API de Vertex AI:', error); 
+        throw new Error('La API de Vertex AI no pudo procesar el archivo.');
+    }
+}
+
+// --- NUEVO: Función para describir imágenes con Gemini ---
+async function describeImageWithGemini(filePath, mimetype, originalName, generativeModel) {
+    console.log("Procesando imagen con Vertex AI Vision...");
+    const fileBuffer = fs.readFileSync(filePath);
+    const filePart = { inlineData: { data: fileBuffer.toString("base64"), mimeType: mimetype } };
+    const prompt = "Describe detalladamente esta imagen. Si contiene texto, transcríbelo. Si es un diagrama, explica lo que representa. Si es una foto, describe la escena y los objetos.";
+    
+    const request = {
+        contents: [{ role: 'user', parts: [ {text: prompt}, filePart ] }],
+    };
+
+    try {
+        const result = await generativeModel.generateContent(request);
+        const description = result.response.candidates[0].content.parts[0].text;
+        return `Descripción de la imagen "${originalName}":\n${description}`;
+    } catch (error) {
+        console.error('Error detallado de la API de Vertex AI Vision:', error);
+        throw new Error('La API de Vertex AI no pudo procesar la imagen.');
+    }
+}
+async function extractTextFromFile(file, generativeModel){
     const filePath = file.path;
     const clientMimeType = file.mimetype;
     const fileExt = path.extname(file.originalname).toLowerCase();
@@ -40,7 +81,7 @@ async function extractTextFromFile(file){
             if (!text || !text.trim()) throw new Error("pdf-parse no extrajo texto.");
         } catch (error) {
             console.warn("pdf-parse falló. Usando fallback de Gemini...");
-            text = await extractTextWithGemini(filePath, clientMimeType);
+            text = await extractTextWithGemini(filePath, clientMimeType, generativeModel);
         }
     }
     // CASO 4: PPTX y VSDX (Delegar al microservicio)
@@ -65,7 +106,7 @@ async function extractTextFromFile(file){
     // CASO 5: IMÁGENES
     else if (['.jpg', '.jpeg', '.png', '.webp'].includes(fileExt) || clientMimeType.startsWith('image/')) {
         console.log(`Procesando (Imagen): ${file.originalname}`);
-        text = await describeImageWithGemini(filePath, clientMimeType, file.originalname);
+        text = await describeImageWithGemini(filePath, clientMimeType, file.originalname, generativeModel);
     }
     // CASO 6: TXT
     else if (fileExt === '.txt' || clientMimeType === 'text/plain') {
@@ -87,7 +128,7 @@ async function processAndFillForm(file, formType, generativeModel) {
   console.log(`[JSON Extractor] Iniciando para el formulario tipo: ${formType}`);
 
   try {
-    const textContent = await extractTextFromFile(file);
+    const textContent = await extractTextFromFile(file, generativeModel);
     if (!textContent || !textContent.trim()) {
       throw new Error("No se pudo extraer contenido del archivo o está vacío.");
     }

@@ -111,48 +111,7 @@ const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, to
 
 
 
-// Función para extraer texto de PDFs con Gemini (nuestro fallback)
-async function extractTextWithGemini(filePath, mimetype) {
-    console.log("Fallback: Intentando extracción de PDF con Vertex AI Vision...");
-    const fileBuffer = fs.readFileSync(filePath);
-    const filePart = { inlineData: { data: fileBuffer.toString("base64"), mimeType: mimetype } };
-    const prompt = "Extrae todo el texto de este documento. Devuelve únicamente el texto plano, sin ningún formato adicional, como si lo copiaras y pegaras. No resumas nada.";
-    
-    // El request debe tener un formato específico para Vertex AI
-    const request = {
-        contents: [{ role: 'user', parts: [ {text: prompt}, filePart ] }],
-    };
 
-    try {
-        const result = await generativeModel.generateContent(request);
-        // La estructura de la respuesta también cambia
-        return result.response.candidates[0].content.parts[0].text;
-    } catch (error) {
-        console.error('Error detallado de la API de Vertex AI:', error); 
-        throw new Error('La API de Vertex AI no pudo procesar el archivo.');
-    }
-}
-
-// --- NUEVO: Función para describir imágenes con Gemini ---
-async function describeImageWithGemini(filePath, mimetype, originalName) {
-    console.log("Procesando imagen con Vertex AI Vision...");
-    const fileBuffer = fs.readFileSync(filePath);
-    const filePart = { inlineData: { data: fileBuffer.toString("base64"), mimeType: mimetype } };
-    const prompt = "Describe detalladamente esta imagen. Si contiene texto, transcríbelo. Si es un diagrama, explica lo que representa. Si es una foto, describe la escena y los objetos.";
-    
-    const request = {
-        contents: [{ role: 'user', parts: [ {text: prompt}, filePart ] }],
-    };
-
-    try {
-        const result = await generativeModel.generateContent(request);
-        const description = result.response.candidates[0].content.parts[0].text;
-        return `Descripción de la imagen "${originalName}":\n${description}`;
-    } catch (error) {
-        console.error('Error detallado de la API de Vertex AI Vision:', error);
-        throw new Error('La API de Vertex AI no pudo procesar la imagen.');
-    }
-}
 
 
 
