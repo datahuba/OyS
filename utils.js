@@ -93,7 +93,7 @@ async function processAndFillForm(file, formType){
     }
 
     // Cargar el prompt
-    const promptKey = `GEMINI_PROMPT_${formType.toUpperCase()}`;
+    const promptKey = `PROMPT_${formType.toUpperCase()}`;
     console.log(promptKey);
     // Cargar esquema JSON
     const schemaPath = path.join(__dirname, 'schemas', `${formType}.schema.json`);
