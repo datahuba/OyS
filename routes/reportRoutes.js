@@ -46,10 +46,13 @@ async function handleReportGeneration(req, res, config) {
             if (files[fieldName]) {
                 const file = files[fieldName][0];
                 const formType = config.formMappings[fieldName];
+                
+                
                 processedFiles.push(file);
                 console.log(`  > Procesando ${file.originalname} para el campo '${formType}'`);
+                
                 processingPromises.push(
-                    processAndFillForm(file, formType).then(json => datosFormularios[formType] = json)
+                processAndFillForm(file, formType, generativeModel).then(json => datosFormularios[formType] = json)
                 );
             }
         }

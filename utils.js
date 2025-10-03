@@ -83,7 +83,7 @@ async function extractTextFromFile(file){
     return text;
 };
 
-async function processAndFillForm(file, formType){
+async function processAndFillForm(file, formType, generativeModel) {
   console.log(`[JSON Extractor] Iniciando para el formulario tipo: ${formType}`);
 
   try {

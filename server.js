@@ -525,7 +525,7 @@ app.post('/api/extract-json', protect, upload, async (req, res) => {
         console.log(`[API] Extrayendo JSON de ${file.originalname} para el Chat ID: ${chatId}`);
         
         // 1. Extraemos el JSON (esto no cambia)
-        const filledJson = await processAndFillForm(file, formType);
+        const filledJson = await processAndFillForm(file, formType, generativeModel);
 
         // 2. Lógica de Guardado en MongoDB
         // Creamos el nombre del campo dinámicamente (ej. 'formulario1Data')
