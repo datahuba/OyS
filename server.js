@@ -5,7 +5,9 @@ const mongoose = require('mongoose');
 const fs =require('fs');
 const path = require('path');
 const multer = require('multer');
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+
+const { VertexAI } = require('@google-cloud/vertexai');
+const { GoogleAuth } = require('google-auth-library');
 const { Pinecone } = require('@pinecone-database/pinecone'); 
 const mammoth = require("mammoth");
 const xlsx = require('xlsx');
@@ -49,13 +51,10 @@ mongoose.connect(process.env.MONGO_URI)
   .catch(err => console.error('Error al conectar a MongoDB:', err));
 
 // --- INICIALIZACIÓN DE SERVICIOS DE IA Y DBs ---
-
+const vertexAI = new VertexAI({ project: 'onlyVertex', location: 'us-central1' });
 // Modelos de Google AI
-const GOOGLE_AI_STUDIO_API_KEY = process.env.GOOGLE_AI_STUDIO_API_KEY;
-const genAI = new GoogleGenerativeAI(GOOGLE_AI_STUDIO_API_KEY);
-const embeddingModel = genAI.getGenerativeModel({ model: "embedding-001" });
-const generativeModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-const visionGenerativeModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+const generativeModel = vertexAI.getGenerativeModel({model: 'gemini-2.5-pro',});
+const embeddingModel = vertexAI.getGenerativeModel({model: "embedding-001",});
 
 // <-- CORRECCIÓN: Inicializar Pinecone
 const pinecone = new Pinecone({
@@ -113,31 +112,44 @@ const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, to
 
 // Función para extraer texto de PDFs con Gemini (nuestro fallback)
 async function extractTextWithGemini(filePath, mimetype) {
-    console.log("Fallback: Intentando extracción de PDF con Gemini Vision...");
+    console.log("Fallback: Intentando extracción de PDF con Vertex AI Vision...");
     const fileBuffer = fs.readFileSync(filePath);
     const filePart = { inlineData: { data: fileBuffer.toString("base64"), mimeType: mimetype } };
     const prompt = "Extrae todo el texto de este documento. Devuelve únicamente el texto plano, sin ningún formato adicional, como si lo copiaras y pegaras. No resumas nada.";
+    
+    // El request debe tener un formato específico para Vertex AI
+    const request = {
+        contents: [{ role: 'user', parts: [ {text: prompt}, filePart ] }],
+    };
+
     try {
-        const result = await visionGenerativeModel.generateContent([prompt, filePart]);
-        return result.response.text();
+        const result = await generativeModel.generateContent(request);
+        // La estructura de la respuesta también cambia
+        return result.response.candidates[0].content.parts[0].text;
     } catch (error) {
-        console.error('Error detallado de la API de Gemini:', error); 
-        throw new Error('La API de Gemini no pudo procesar el archivo.');
+        console.error('Error detallado de la API de Vertex AI:', error); 
+        throw new Error('La API de Vertex AI no pudo procesar el archivo.');
     }
 }
 
 // --- NUEVO: Función para describir imágenes con Gemini ---
 async function describeImageWithGemini(filePath, mimetype, originalName) {
-    console.log("Procesando imagen con Gemini Vision...");
+    console.log("Procesando imagen con Vertex AI Vision...");
     const fileBuffer = fs.readFileSync(filePath);
     const filePart = { inlineData: { data: fileBuffer.toString("base64"), mimeType: mimetype } };
     const prompt = "Describe detalladamente esta imagen. Si contiene texto, transcríbelo. Si es un diagrama, explica lo que representa. Si es una foto, describe la escena y los objetos.";
+    
+    const request = {
+        contents: [{ role: 'user', parts: [ {text: prompt}, filePart ] }],
+    };
+
     try {
-        const result = await visionGenerativeModel.generateContent([prompt, filePart]);
-        return `Descripción de la imagen "${originalName}":\n${result.response.text()}`;
+        const result = await generativeModel.generateContent(request);
+        const description = result.response.candidates[0].content.parts[0].text;
+        return `Descripción de la imagen "${originalName}":\n${description}`;
     } catch (error) {
-        console.error('Error detallado de la API de Gemini Vision:', error);
-        throw new Error('La API de Gemini no pudo procesar la imagen.');
+        console.error('Error detallado de la API de Vertex AI Vision:', error);
+        throw new Error('La API de Vertex AI no pudo procesar la imagen.');
     }
 }
 
@@ -176,8 +188,9 @@ async function generateAndSaveReport(chatId, userQuery) {
             .replace('__JSON_FORM_3__', stringForm3);
 
         // 3. Llamar a la IA
-        const result = await generativeModel.generateContent(finalPrompt);
-        const generatedReportText = result.response.text();
+        const request = { contents: [{ role: 'user', parts: [{ text: finalPrompt }] }] };
+        const result = await generativeModel.generateContent(request);
+        const generatedReportText = result.response.candidates[0].content.parts[0].text;
 
         // 4. Guardar el informe y los mensajes en la BD
         const updatedChatWithReport = await Chat.findByIdAndUpdate(chatId, {
@@ -312,9 +325,11 @@ const processAndFillForm = async (file, formType) => {
 
     // API
     console.log(`[JSON Extractor] Enviando prompt para ${formType} a la API...`);
-    const extractionModel = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-    const result = await extractionModel.generateContent(finalPrompt);
-    const responseText = result.response.text();
+    
+    const request = { contents: [{ role: 'user', parts: [{ text: finalPrompt }] }] };
+    const result = await generativeModel.generateContent(request);
+    
+    const responseText = result.response.candidates[0].content.parts[0].text;
 
     // Limpiar respuesta
     const cleanedText = responseText.replace(/^```json\n?/, '').replace(/```$/, '');
@@ -341,8 +356,41 @@ const processAndFillForm = async (file, formType) => {
 
 
 
+// --- FUNCIÓN getEmbedding (VERSIÓN FINAL CON HTTP DIRECTO) ---
+const getEmbedding = async (text) => {
+    try {
+        // 1. Obtenemos las credenciales y el token de acceso automáticamente.
+        const auth = new GoogleAuth({
+            scopes: 'https://www.googleapis.com/auth/cloud-platform'
+        });
+        const client = await auth.getClient();
+        const accessToken = (await client.getAccessToken()).token;
 
-const getEmbedding = async (text) => { const result = await embeddingModel.embedContent(text); return result.embedding.values; };
+        // 2. Definimos el endpoint y el cuerpo de la petición.
+        const projectId = process.env.GOOGLE_CLOUD_PROJECT; // Leído desde env-vars.yaml
+        const url = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/text-embedding-004:predict`;
+        
+        const data = {
+            instances: [ { content: text, taskType: "RETRIEVAL_DOCUMENT" } ]
+        };
+
+        // 3. Hacemos la llamada a la API con Axios.
+        const response = await axios.post(url, data, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        // 4. Extraemos el embedding de la respuesta.
+        return response.data.predictions[0].embeddings.values;
+
+    } catch (error) {
+        console.error("Error al generar embedding (HTTP):", error.response ? error.response.data : error.message);
+        throw new Error("No se pudo generar el embedding.");
+    }
+};
+
 const chunkDocument = (text, chunkSize = 1000, overlap = 200) => { const chunks = []; for (let i = 0; i < text.length; i += chunkSize - overlap) { chunks.push(text.substring(i, i + chunkSize)); } return chunks; };
 const cosineSimilarity = (vecA, vecB) => { let dotProduct = 0, magA = 0, magB = 0; for(let i=0;i<vecA.length;i++){ dotProduct += vecA[i]*vecB[i]; magA += vecA[i]*vecA[i]; magB += vecB[i]*vecB[i]; } magA = Math.sqrt(magA); magB = Math.sqrt(magB); if(magA===0||magB===0)return 0; return dotProduct/(magA*magB); };
 
@@ -629,9 +677,9 @@ app.post('/api/chat', protect, async (req, res) => {
         }
 
         // 2. Generar respuesta y guardar en BD
-        const chatSession = generativeModel.startChat({ history: contents.slice(0, -1) });
-        const result = await chatSession.sendMessage(userQuery);
-        const botText = result.response.text();
+        const request = {contents: contents,};
+        const result = await generativeModel.generateContent(request);
+        const botText = result.response.candidates[0].content.parts[0].text;
 
         const updatedChat = await Chat.findByIdAndUpdate(chatId, {
             $push: { messages: { $each: [
@@ -765,9 +813,10 @@ app.post('/api/generate-report', protect, async (req, res) => {
             .replace('__JSON_FORM_3__', jsonForm3 || '"No proporcionado."');
 
         // 3. Llamar a la IA y ESPERAR la respuesta
-        console.log("[Report Gen] Enviando prompt final a Gemini...");
-        const result = await generativeModel.generateContent(finalPrompt);
-        const generatedReportText = result.response.text();
+        console.log("[Report Gen] Enviando prompt final a Vertex AI...");
+        const request = { contents: [{ role: 'user', parts: [{ text: finalPrompt }] }] };
+        const result = await generativeModel.generateContent(request);
+        const generatedReportText = result.response.candidates[0].content.parts[0].text;
         
         // 4. Guardar el informe en la BD
         const updatedChat = await Chat.findByIdAndUpdate(
