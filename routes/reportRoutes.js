@@ -39,24 +39,38 @@ async function handleReportGeneration(req, res, config) {
 
     try {
         console.log(`[API /informes] Iniciando generación de informe tipo: ${config.reportType}`);
-        const processingPromises = [];
+        // --- INICIO DEL BLOQUE CORREGIDO ---
 
-        // 1. Procesar archivos a JSON según la configuración
-        for (const fieldName in config.formMappings) {
-            if (files[fieldName]) {
-                const file = files[fieldName][0];
-                const formType = config.formMappings[fieldName];
-                
-                
-                processedFiles.push(file);
-                console.log(`  > Procesando ${file.originalname} para el campo '${formType}'`);
-                
-                processingPromises.push(
-                processAndFillForm(file, formType, generativeModel).then(json => datosFormularios[formType] = json)
-                );
-            }
-        }
-        await Promise.all(processingPromises);
+// 1. Preparamos una lista de "trabajos" para no perder la correspondencia entre el tipo de formulario y su promesa.
+const jobs = [];
+for (const fieldName in config.formMappings) {
+    if (files[fieldName]) {
+        const file = files[fieldName][0];
+        const formType = config.formMappings[fieldName];
+        
+        processedFiles.push(file);
+        console.log(`  > Procesando ${file.originalname} para el campo '${formType}'`);
+        
+        jobs.push({
+            formType: formType,
+            promise: processAndFillForm(file, formType, generativeModel)
+        });
+    }
+}
+
+// 2. Extraemos solo las promesas y las ejecutamos todas en paralelo, esperando sus resultados.
+const promises = jobs.map(job => job.promise);
+const jsonResults = await Promise.all(promises);
+
+// 3. Ahora que TENEMOS todos los resultados, construimos el objeto `datosFormularios` de forma segura y síncrona.
+for (let i = 0; i < jobs.length; i++) {
+    const formType = jobs[i].formType; // Obtenemos el tipo de formulario del job
+    const json = jsonResults[i];          // Obtenemos el JSON del resultado en el mismo índice
+    datosFormularios[formType] = json;
+}
+// En este punto, `datosFormularios` está 100% garantizado que estará lleno con todos los JSON.
+
+// --- FIN DEL BLOQUE CORREGIDO ---
 
         // 2. Construir y ejecutar el prompt según la configuración
         let promptTemplate = process.env[config.promptEnvVar];
