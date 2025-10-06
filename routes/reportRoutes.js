@@ -170,7 +170,7 @@ const reportConfigs = {
         reportType: 'Consolidado',
         promptEnvVar: 'PROMPT_CONSOLIDADO',
         formMappings: {
-            'compFile': 'comp' // El archivo se llama 'compFile', se procesa como 'comp' y su JSON reemplaza __JSON_COMP__
+            'form1File': 'comp' // El archivo se llama 'compFile', se procesa como 'comp' y su JSON reemplaza __JSON_COMP__
         }
     }
 };
