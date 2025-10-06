@@ -1,0 +1,128 @@
+{
+  "informeAnalisisOrganizacional": {
+    "fechaExtraccion": "2025-10-05T20:00:00Z",
+    "totalDocumentos": 0,
+    "analisis": [
+      {
+        "metadata": {
+          "tituloDocumento": null,
+          "unidadAnalizada": null,
+          "facultad": null,
+          "fechaDocumento": null
+        },
+        "analisisRetrospectivo": {
+          "antecedentes": {
+            "resumenHistorico": null,
+            "estadisticas": [
+              {
+                "metrica": "Cantidad de docentes",
+                "valor": null
+              },
+              {
+                "metrica": "Cantidad de estudiantes",
+                "valor": null
+              }
+            ]
+          },
+          "marcoLegal": {
+            "resoluciones": []
+          },
+          "evaluacionPOA": {
+            "cumplimientoActividades": null,
+            "cumplimientoFinanciero": null,
+            "dificultades": [],
+            "evaluacionExterna": null
+          },
+          "servicioAUsuarios": {
+            "serviciosPrimarios": [
+              {
+                "servicio": null,
+                "usuarios": null
+              }
+            ],
+            "serviciosSecundarios": [
+              {
+                "servicio": null,
+                "usuarios": null
+              }
+            ],
+            "calificacionServicios": {
+              "tablaCalificacion": [
+                {
+                  "servicio": null,
+                  "calidad": null,
+                  "cantidad": null,
+                  "cobertura": null,
+                  "oportunidad": null,
+                  "frecuencia": null
+                }
+              ],
+              "analisisResumen": null,
+              "gradoSatisfaccion": null
+            }
+          },
+          "procesosYProcedimientos": {
+            "resumen": null,
+            "listaProcesos": [
+              {
+                "nombreProceso": null,
+                "resultadoProducto": null,
+                "tieneBaseLegal": null,
+                "baseLegalAdjunta": null
+              }
+            ]
+          },
+          "organizacionYAreas": {
+            "organigramaActual": {
+              "descripcion": null,
+              "hallazgos": []
+            },
+            "personal": {
+              "resumenComposicion": null,
+              "estructuraDetallada": [
+                {
+                  "detalle": null,
+                  "nivel": null,
+                  "cantidad": null
+                }
+              ],
+              "tiposDeContrato": [
+                {
+                  "tipo": null,
+                  "cantidad": null
+                }
+              ],
+              "adecuacionPersonal": null
+            },
+            "canalesDeComunicacion": {
+              "canalesUtilizados": [],
+              "analisis": null
+            }
+          }
+        },
+        "analisisProspectivo": {
+          "resumen": null,
+          "nuevosObjetivos": [],
+          "propuestaCambios": {
+            "descripcion": null,
+            "organigramaPropuesto": {
+              "descripcion": null,
+              "cargosPropuestos": []
+            }
+          }
+        },
+        "conclusionesYRecomendaciones": {
+          "conclusiones": [],
+          "recomendaciones": []
+        },
+        "firmas": [
+          {
+            "nombre": null,
+            "cargo": null,
+            "codigoAdministrativo": null
+          }
+        ]
+      }
+    ]
+  }
+}
