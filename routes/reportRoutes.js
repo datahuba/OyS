@@ -20,7 +20,7 @@ const upload = multer({ dest: 'uploads/' }).fields([
 
 // --- INICIALIZACIÓN DE IA ---
 const vertexAI = new VertexAI({ project: process.env.GOOGLE_CLOUD_PROJECT || 'onlyvertex-474004', location: 'us-central1' });
-const generativeModel = vertexAI.getGenerativeModel({ model: 'gemini-1.5-pro-002' });
+const generativeModel = vertexAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
 
 
 // ========================================================================
@@ -44,33 +44,27 @@ async function handleReportGeneration(req, res, config) {
         console.log(`[API /informes] Iniciando generación de informe tipo: ${config.reportType}`);
         // --- INICIO DEL BLOQUE CORREGIDO ---
 
-// 1. Preparamos una lista de "trabajos" para no perder la correspondencia entre el tipo de formulario y su promesa.
-const jobs = [];
+console.log("> Iniciando procesamiento SECUENCIAL de formularios para evitar error 429...");
+
+// Usamos un bucle for...of que funciona bien con 'await'.
 for (const fieldName in config.formMappings) {
     if (files[fieldName]) {
         const file = files[fieldName][0];
         const formType = config.formMappings[fieldName];
         
         processedFiles.push(file);
-        console.log(`  > Procesando ${file.originalname} para el campo '${formType}'`);
+        console.log(`  > Procesando AHORA: ${file.originalname} para el campo '${formType}'`);
         
-        jobs.push({
-            formType: formType,
-            promise: processAndFillForm(file, formType, generativeModel)
-        });
+        // AWAIT DENTRO DEL BUCLE: El código se detiene aquí hasta que la promesa se resuelve.
+        const jsonResult = await processAndFillForm(file, formType, generativeModel);
+        
+        // Una vez que tenemos el resultado, lo añadimos al objeto de datos.
+        datosFormularios[formType] = jsonResult;
+        console.log(`  > TERMINADO: ${file.originalname}. Datos para '${formType}' guardados.`);
     }
 }
 
-// 2. Extraemos solo las promesas y las ejecutamos todas en paralelo, esperando sus resultados.
-const promises = jobs.map(job => job.promise);
-const jsonResults = await Promise.all(promises);
-
-// 3. Ahora que TENEMOS todos los resultados, construimos el objeto `datosFormularios` de forma segura y síncrona.
-for (let i = 0; i < jobs.length; i++) {
-    const formType = jobs[i].formType; // Obtenemos el tipo de formulario del job
-    const json = jsonResults[i];          // Obtenemos el JSON del resultado en el mismo índice
-    datosFormularios[formType] = json;
-}
+console.log("> Procesamiento SECUENCIAL completado. 'datosFormularios' está lleno.");
 // En este punto, `datosFormularios` está 100% garantizado que estará lleno con todos los JSON.
 
 // --- FIN DEL BLOQUE CORREGIDO ---
