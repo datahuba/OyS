@@ -77,13 +77,21 @@ for (let i = 0; i < jobs.length; i++) {
         if (!promptTemplate) throw new Error(`Prompt no encontrado en .env: ${config.promptEnvVar}`);
 
         // Reemplazar placeholders en el prompt
+        // --- INICIO DE BLOQUE DE DEPURACIÓN AVANZADA ---
+        console.log("\n--- INICIANDO DEPURACIÓN DE REEMPLAZO DE PLACEHOLDER ---");
+
+        // 1. ¿Qué datos tenemos realmente?
+        console.log("Claves disponibles en 'datosFormularios':", Object.keys(datosFormularios));
         for (const fieldName in config.formMappings) {
             const formType = config.formMappings[fieldName]; // ej: 'form1', 'form2', 'comp'
             
             // Construimos el placeholder que esperamos encontrar en el prompt.
             const placeholder = `_JSON_${formType.toUpperCase()}_`;
-
+            console.log(`Intentando reemplazar el placeholder: "${placeholder}"`);
             // Verificamos si tenemos datos para este formType.
+            console.log(`Últimos 500 caracteres del prompt ANTES del reemplazo:\n...${promptTemplate.slice(-500)}`);
+            console.log(`¿El prompt contiene "${placeholder}"? : ${promptTemplate.includes(placeholder)}`);
+            
             if (datosFormularios[formType]) {
                 console.log(`> Reemplazando placeholder: ${placeholder}`);
                 promptTemplate = promptTemplate.replace(
@@ -96,7 +104,13 @@ for (let i = 0; i < jobs.length; i++) {
                 // promptTemplate = promptTemplate.replace(placeholder, '"No proporcionado."');
             }
         }
-        console.log(promptTemplate);
+                console.log("\n--- DEPURACIÓN FINAL ---");
+        // 5. ¿El placeholder sigue ahí después de todo?
+        const finalPlaceholder = `_JSON_COMP_`;
+        console.log(`Últimos 500 caracteres del prompt DESPUÉS del reemplazo:\n...${promptTemplate.slice(-500)}`);
+        console.log(`¿El placeholder "${finalPlaceholder}" sigue existiendo? : ${promptTemplate.includes(finalPlaceholder)}`);
+        console.log("--- FIN DE DEPURACIÓN ---\n");
+
         console.log(`[Report Gen Service] Enviando prompt para ${config.reportType}...`);
         const request = { contents: [{ role: 'user', parts: [{ text: promptTemplate }] }] };
         const result = await generativeModel.generateContent(request);
