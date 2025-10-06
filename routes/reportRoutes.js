@@ -77,10 +77,24 @@ for (let i = 0; i < jobs.length; i++) {
         if (!promptTemplate) throw new Error(`Prompt no encontrado en .env: ${config.promptEnvVar}`);
 
         // Reemplazar placeholders en el prompt
-        for (const formType in datosFormularios) {
+        for (const fieldName in config.formMappings) {
+            const formType = config.formMappings[fieldName]; // ej: 'form1', 'form2', 'comp'
+            
+            // Construimos el placeholder que esperamos encontrar en el prompt.
             const placeholder = `_JSON_${formType.toUpperCase()}_`;
-            console.log(placeholder);
-            promptTemplate = promptTemplate.replace(placeholder, JSON.stringify(datosFormularios[formType], null, 2));
+
+            // Verificamos si tenemos datos para este formType.
+            if (datosFormularios[formType]) {
+                console.log(`> Reemplazando placeholder: ${placeholder}`);
+                promptTemplate = promptTemplate.replace(
+                    placeholder, 
+                    JSON.stringify(datosFormularios[formType], null, 2)
+                );
+            } else {
+                console.log(`> ADVERTENCIA: No se encontraron datos para '${formType}', no se reemplazará ${placeholder}.`);
+                // Opcional: reemplazar con un valor por defecto si no hay datos
+                // promptTemplate = promptTemplate.replace(placeholder, '"No proporcionado."');
+            }
         }
         console.log(promptTemplate);
         console.log(`[Report Gen Service] Enviando prompt para ${config.reportType}...`);
