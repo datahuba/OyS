@@ -31,6 +31,9 @@ async function handleReportGeneration(req, res, config) {
     const { chatId } = req.body;
     const files = req.files;
 
+    console.log(">>>> [INICIO DE PETICIÓN] <<<<");
+    console.log("NOMBRES DE CAMPO DE ARCHIVO RECIBIDOS:", Object.keys(files));
+
     if (!chatId) return res.status(400).json({ message: 'Se requiere un chatId.' });
     if (!files || Object.keys(files).length === 0) return res.status(400).json({ message: 'Se debe proporcionar al menos un archivo.' });
 
