@@ -141,7 +141,7 @@ async function processAndFillForm(file, formType, generativeModel) {
     // Cargar esquema JSON
     const schemaPath = path.join(__dirname, 'schemas', `${formType}.schema.json`);
     const [promptTemplate, schemaFileContent] = await Promise.all([process.env[promptKey],fs.promises.readFile(schemaPath, 'utf8')]);
-    console.log(promptTemplate); 
+    //console.log(promptTemplate); 
     if (!promptTemplate) {
         throw new Error(`El prompt para ${formType} no se encontró en el archivo .env`);
     }
@@ -149,7 +149,7 @@ async function processAndFillForm(file, formType, generativeModel) {
     // Armar promp con pedazos
     let finalPrompt = promptTemplate.replace('__JSON_SCHEMA__', schemaFileContent);
     finalPrompt = finalPrompt.replace('__TEXT_TO_PROCESS__', textContent);
-
+    console.log(finalPrompt); 
     // API
     console.log(`[JSON Extractor] Enviando prompt para ${formType} a la API...`);
     
