@@ -21,7 +21,7 @@ const upload = multer({ dest: 'uploads/' }).fields([
 // --- INICIALIZACIÓN DE IA ---
 const vertexAI = new VertexAI({ location: 'us-central1' });
 const generativeModel = vertexAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
-const visionModel = vertexAI.getGenerativeModel({ model: 'publishers/mistralai/models/mistral-ocr-2505' });
+const visionModel = vertexAI.getGenerativeModel({ model: 'mistral-ocr-2505' });
 
 
 // ========================================================================
