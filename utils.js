@@ -126,11 +126,11 @@ async function extractTextFromFile(file, generativeModel){
     return text;
 };
 
-async function processAndFillForm(file, formType, generativeModel) {
+async function processAndFillForm(file, formType, generativeModel,visionModel) {
   console.log(`[JSON Extractor] Iniciando para el formulario tipo: ${formType}`);
 
   try {
-    const textContent = await extractTextFromFile(file, generativeModel);
+    const textContent = await extractTextFromFile(file, visionModel);
     if (!textContent || !textContent.trim()) {
       throw new Error("No se pudo extraer contenido del archivo o está vacío.");
     }

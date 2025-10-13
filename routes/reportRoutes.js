@@ -21,6 +21,7 @@ const upload = multer({ dest: 'uploads/' }).fields([
 // --- INICIALIZACIÓN DE IA ---
 const vertexAI = new VertexAI({ location: 'us-central1' });
 const generativeModel = vertexAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+const visionModel = vertexAI.getGenerativeModel({ model: 'mistralai/mistral-ocr-2505@001' });
 
 
 // ========================================================================
@@ -56,7 +57,7 @@ for (const fieldName in config.formMappings) {
         console.log(`  > Procesando AHORA: ${file.originalname} para el campo '${formType}'`);
         
         // AWAIT DENTRO DEL BUCLE: El código se detiene aquí hasta que la promesa se resuelve.
-        const jsonResult = await processAndFillForm(file, formType, generativeModel);
+        const jsonResult = await processAndFillForm(file, formType, generativeModel,visionModel);
         
         // Una vez que tenemos el resultado, lo añadimos al objeto de datos.
         datosFormularios[formType] = jsonResult;
