@@ -57,7 +57,7 @@ const vertexAI = new VertexAI({ location: 'us-central1' });
 //PRUEBA
 // Modelos de Google AI
 const generativeModel = vertexAI.getGenerativeModel({model: 'gemini-2.5-pro',});
-const visionModel = vertexAI.getGenerativeModel({ model: 'mistralai/mistral-ocr-2505@001' });
+const visionModel = vertexAI.getGenerativeModel({ model: 'publishers/mistralai/models/mistral-ocr-2505' });
 //const embeddingModel = vertexAI.getGenerativeModel({model: "embedding-001",});
 
 const genAI_for_embeddings = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_API_KEY);
