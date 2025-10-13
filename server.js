@@ -54,6 +54,7 @@ mongoose.connect(process.env.MONGO_URI)
 
 // --- INICIALIZACIÓN DE SERVICIOS DE IA Y DBs ---
 const vertexAI = new VertexAI({ location: 'us-central1' });
+
 // Modelos de Google AI
 const generativeModel = vertexAI.getGenerativeModel({model: 'gemini-2.5-pro',});
 //const embeddingModel = vertexAI.getGenerativeModel({model: "embedding-001",});

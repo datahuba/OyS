@@ -19,7 +19,7 @@ const upload = multer({ dest: 'uploads/' }).fields([
 ]);
 
 // --- INICIALIZACIÓN DE IA ---
-const vertexAI = new VertexAI({ location: 'us-central1' });
+const vertexAI = new VertexAI({ project: process.env.GOOGLE_CLOUD_PROJECT || 'onlyvertex-474004', location: 'us-central1' });
 const generativeModel = vertexAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
 
 
