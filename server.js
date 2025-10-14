@@ -54,19 +54,22 @@ mongoose.connect(process.env.MONGO_URI)
 
 // --- INICIALIZACIÓN DE SERVICIOS DE IA Y DBs ---
 const vertexAI = new VertexAI({ location: 'us-central1' });
-
+const vertexEmbeddingModel = vertexAI.getGenerativeModel({ model: "gemini-embedding-001" });
 // Modelos de Google AI
 const generativeModel = vertexAI.getGenerativeModel({model: 'gemini-2.5-pro',});
+
 //const embeddingModel = vertexAI.getGenerativeModel({model: "embedding-001",});
 
 const genAI_for_embeddings = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_API_KEY);
 const embeddingModel = genAI_for_embeddings.getGenerativeModel({ model: "embedding-001" });
-// <-- CORRECCIÓN: Inicializar Pinecone
-const pinecone = new Pinecone({
-    apiKey: process.env.PINECONE_API_KEY,
-});
+// Inicializar Pinecone UNO
+const pinecone = new Pinecone({apiKey: process.env.PINECONE_API_KEY,});
 const pineconeIndex = pinecone.index('chat-rag'); 
 console.log("Conectado y listo para usar el índice de Pinecone: 'chat-rag'.");
+// Inicializar Pinecone DOS
+const pinecone2 = new Pinecone({apiKey: process.env.PINECONE_API_KEY2,});
+const pineconeIndex2 = pinecone.index('rag-normativas-uagrm'); 
+console.log("Conectado y listo para usar el índice de Pinecone: 'rag-normativas-uagrm'.");
 
 const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
 
@@ -112,6 +115,25 @@ const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, to
         return [];
     }
 };
+
+// --- FUNCIÓN DE BÚSQUEDA ESPECÍFICA EN EL ÍNDICE DE NORMATIVAS (pineconeIndex2) ---
+const findRelevantChunksInNormativas = async (queryEmbedding, topK = 10) => {
+    try {
+        const queryResponse = await pineconeIndex2.query({
+            topK,
+            vector: queryEmbedding,
+            includeMetadata: true,
+        });
+        if (queryResponse.matches?.length) {
+            return queryResponse.matches.map(match => match.metadata.chunkText);
+        }
+        return [];
+    } catch (error) {
+        console.error("[Pinecone - Normativas] Error al realizar la búsqueda:", error);
+        return [];
+    }
+};
+
 // --- FUNCIÓN getEmbedding (VERSIÓN SIMPLE DE AI STUDIO PARA COMPATIBILIDAD) ---
 const getEmbedding = async (text) => {
     try {
@@ -120,6 +142,20 @@ const getEmbedding = async (text) => {
     } catch (error) {
         console.error("Error al generar embedding con AI Studio:", error);
         throw new Error("No se pudo generar el embedding de compatibilidad.");
+    }
+};
+
+const getVertexEmbedding = async (text) => {
+    try {
+        const request = {
+            contents: [{ parts: [{ text: text }] }],
+        };
+        const result = await vertexEmbeddingModel.embedContents(request);
+        // La estructura de la respuesta de Vertex es un poco diferente
+        return result.embeddings[0].values;
+    } catch (error) {
+        console.error("Error al generar embedding con Vertex AI:", error);
+        throw new Error("No se pudo generar el embedding con el modelo de Vertex.");
     }
 };
 
@@ -411,6 +447,55 @@ app.post('/api/chat', protect, async (req, res) => {
 
     } catch (mainError) {
         console.error("Error inesperado en la ruta /api/chat:", mainError);
+        res.status(500).json({ message: "Error inesperado en el servidor." });
+    }
+});
+
+app.post('/api/chat-normativas', protect, async (req, res) => {
+    const { conversationHistory, chatId } = req.body;
+    if (!chatId || !Array.isArray(conversationHistory)) {
+        return res.status(400).json({ message: 'Datos inválidos.' });
+    }
+
+    try {
+        const currentChat = await Chat.findById(chatId);
+        if (!currentChat) {
+            return res.status(404).json({ message: "Chat no encontrado." });
+        }
+
+        const userQuery = conversationHistory[conversationHistory.length - 1].parts[0].text;
+
+        // --- LÓGICA DE CHAT CON RAG DE NORMATIVAS ---
+
+        // 1. Generamos el embedding de la pregunta del usuario usando la NUEVA función de Vertex.
+        const queryEmbedding = await getVertexEmbedding(userQuery); // <-- ¡CAMBIO CLAVE!
+
+        // 2. Buscamos chunks relevantes usando nuestra función de búsqueda para normativas.
+        const relevantChunks = await findRelevantChunksInNormativas(queryEmbedding, 15);
+        console.log(`[DEBUG-Normativas] Se encontraron ${relevantChunks.length} chunks relevantes en Pinecone.`);
+
+        // 3. Construimos el contexto para el modelo (esta lógica es reutilizada).
+        if (relevantChunks.length > 0) {
+            const contextString = "--- INICIO DEL CONTEXTO (Normativas UAGRM) ---\n" + relevantChunks.join("\n---\n") + "\n--- FIN DEL CONTEXTO ---";
+            const userQueryWithContext = `${contextString}\n\nBasándote **estrictamente** en el contexto anterior sobre las normativas de la UAGRM, responde a la siguiente pregunta: ${userQuery}`;
+            conversationHistory[conversationHistory.length - 1].parts[0].text = userQueryWithContext;
+        }
+
+        // 4. Preparamos y enviamos la petición al modelo generativo (no cambia).
+        const contents = conversationHistory.map(msg => ({ role: msg.role, parts: msg.parts }));
+        const request = { contents: contents };
+        const result = await generativeModel.generateContent(request);
+        const botText = result.response.candidates[0].content.parts[0].text;
+
+        // 5. Guardamos la conversación en la base de datos (no cambia).
+        const updatedChat = await Chat.findByIdAndUpdate(chatId, {
+            $push: { messages: { $each: [{ sender: 'user', text: userQuery }, { sender: 'ai', text: botText }] } }
+        }, { new: true });
+
+        res.status(200).json({ updatedChat });
+
+    } catch (mainError) {
+        console.error("Error inesperado en la ruta /api/chat-normativas:", mainError);
         res.status(500).json({ message: "Error inesperado en el servidor." });
     }
 });
