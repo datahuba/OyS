@@ -7,8 +7,15 @@ const axios = require('axios');
 const FormData = require('form-data');
 const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
 
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const DELAY_MS = 10000;
+
+
 // Función para extraer texto de PDFs con Gemini (nuestro fallback)
 async function extractTextWithGemini(filePath, mimetype, generativeModel) {
+    await delay(DELAY_MS);
+    console.log(`[DELAY] Esperando ${DELAY_MS}ms antes de la llamada OCR para ${filePath}...`);
+
     console.log("Fallback: Intentando extracción de PDF con Vertex AI Vision...");
     const fileBuffer = fs.readFileSync(filePath);
     const filePart = { inlineData: { data: fileBuffer.toString("base64"), mimeType: mimetype } };
@@ -127,7 +134,7 @@ async function extractTextFromFile(file, generativeModel){
 };
 
 async function processAndFillForm(file, formType, generativeModel) {
-  console.log(`[JSON Extractor] Iniciando para el formulario tipo: ${formType}`);
+      console.log(`[JSON Extractor] Iniciando para el formulario tipo: ${formType}`);
 
   try {
     const textContent = await extractTextFromFile(file, generativeModel);
@@ -149,8 +156,11 @@ async function processAndFillForm(file, formType, generativeModel) {
     // Armar promp con pedazos
     let finalPrompt = promptTemplate.replace('__JSON_SCHEMA__', schemaFileContent);
     finalPrompt = finalPrompt.replace('__TEXT_TO_PROCESS__', textContent);
-
+    
     // API
+    await delay(DELAY_MS);
+    console.log(`[DELAY] Esperando ${DELAY_MS}ms antes de la llamada de extracción JSON para ${file.originalname}...`);
+    
     console.log(`[JSON Extractor] Enviando prompt para ${formType} a la API...`);
     
     const request = { contents: [{ role: 'user', parts: [{ text: finalPrompt }] }] };

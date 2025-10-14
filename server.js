@@ -85,7 +85,6 @@ const SIMILARITY_THRESHOLD = 0.9;
 
 
 
-
 const upload = multer({ dest: 'uploads/' }).array('files', 10);
 
 // --- SUBPROCESOS Y FUNCIONES AUXILIARES ---
@@ -477,6 +476,7 @@ app.post('/api/chat-normativas', protect, async (req, res) => {
         // 3. Construimos el contexto para el modelo (esta lógica es reutilizada).
         if (relevantChunks.length > 0) {
             const contextString = "--- INICIO DEL CONTEXTO (Normativas UAGRM) ---\n" + relevantChunks.join("\n---\n") + "\n--- FIN DEL CONTEXTO ---";
+            console.log(contextString);
             const userQueryWithContext = `${contextString}\n\nBasándote **estrictamente** en el contexto anterior sobre las normativas de la UAGRM, responde a la siguiente pregunta: ${userQuery}`;
             conversationHistory[conversationHistory.length - 1].parts[0].text = userQueryWithContext;
         }
