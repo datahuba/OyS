@@ -463,34 +463,63 @@ app.post('/api/chat-normativas', protect, async (req, res) => {
         }
 
         const userQuery = conversationHistory[conversationHistory.length - 1].parts[0].text;
+        // LOG 1: Verificar la consulta inicial del usuario.
+        console.log(`[Normativas Chat] Paso 1: Recibida nueva consulta: "${userQuery}"`);
 
         // --- LÓGICA DE CHAT CON RAG DE NORMATIVAS ---
 
-        // 1. Generamos el embedding de la pregunta del usuario usando la NUEVA función de Vertex.
-        const queryEmbedding = await getVertexEmbedding(userQuery); // <-- ¡CAMBIO CLAVE!
+        // 1. Generamos el embedding de la pregunta.
+        const queryEmbedding = await getVertexEmbedding(userQuery);
+        // LOG 2: Confirmar que el embedding se generó.
+        console.log('[Normativas Chat] Paso 2: Embedding para la consulta generado exitosamente.');
 
-        // 2. Buscamos chunks relevantes usando nuestra función de búsqueda para normativas.
+        // 2. Buscamos chunks relevantes en Pinecone.
         const relevantChunks = await findRelevantChunksInNormativas(queryEmbedding, 15);
-        console.log(`[DEBUG-Normativas] Se encontraron ${relevantChunks.length} chunks relevantes en Pinecone.`);
+        // LOG 3: Confirmar cuántos chunks se encontraron (esto ya lo tenías).
+        console.log(`[Normativas Chat] Paso 3: Se encontraron ${relevantChunks.length} chunks relevantes en Pinecone.`);
 
-        // 3. Construimos el contexto para el modelo (esta lógica es reutilizada).
+        // 3. Construimos el contexto para el modelo.
         if (relevantChunks.length > 0) {
+            // LOG 4: ¡EL MÁS IMPORTANTE! Imprimir el contenido de los chunks recuperados.
+            // Esto te mostrará exactamente qué información está viendo el modelo.
+            console.log('[Normativas Chat] Paso 4: === INICIO DE CHUNKS RECUPERADOS ===');
+            relevantChunks.forEach((chunk, index) => {
+                // Imprimimos los primeros 150 caracteres de cada chunk para no saturar la consola.
+                console.log(`--- Chunk ${index + 1} ---\n"${chunk.substring(0, 150)}..."\n`);
+            });
+            console.log('[Normativas Chat] === FIN DE CHUNKS RECUPERADOS ===');
+
             const contextString = "--- INICIO DEL CONTEXTO (Normativas UAGRM) ---\n" + relevantChunks.join("\n---\n") + "\n--- FIN DEL CONTEXTO ---";
-            console.log(contextString);
+            
             const userQueryWithContext = `${contextString}\n\nBasándote **estrictamente** en el contexto anterior sobre las normativas de la UAGRM, responde a la siguiente pregunta: ${userQuery}`;
+            
+            // LOG 5: Imprimir el prompt completo que se enviará al modelo.
+            console.log('[Normativas Chat] Paso 5: === INICIO DEL PROMPT FINAL ENVIADO AL MODELO ===');
+            // Imprimimos solo una parte para no duplicar toda la info en la consola.
+            console.log(userQueryWithContext.substring(0, 500) + '...');
+            console.log('[Normativas Chat] === FIN DEL PROMPT FINAL ENVIADO AL MODELO ===');
+
             conversationHistory[conversationHistory.length - 1].parts[0].text = userQueryWithContext;
+        } else {
+            console.log('[Normativas Chat] Paso 4 y 5 omitidos: No se encontraron chunks relevantes.');
         }
 
-        // 4. Preparamos y enviamos la petición al modelo generativo (no cambia).
+        // 4. Preparamos y enviamos la petición al modelo generativo.
         const contents = conversationHistory.map(msg => ({ role: msg.role, parts: msg.parts }));
         const request = { contents: contents };
         const result = await generativeModel.generateContent(request);
         const botText = result.response.candidates[0].content.parts[0].text;
 
-        // 5. Guardamos la conversación en la base de datos (no cambia).
+        // LOG 6: Imprimir la respuesta exacta que dio el modelo.
+        console.log(`[Normativas Chat] Paso 6: Respuesta recibida del modelo generativo: "${botText}"`);
+
+        // 5. Guardamos la conversación en la base de datos.
         const updatedChat = await Chat.findByIdAndUpdate(chatId, {
             $push: { messages: { $each: [{ sender: 'user', text: userQuery }, { sender: 'ai', text: botText }] } }
         }, { new: true });
+        
+        // LOG 7: Confirmar que el proceso finalizó y se guardó.
+        console.log('[Normativas Chat] Paso 7: Conversación guardada en la base de datos exitosamente.');
 
         res.status(200).json({ updatedChat });
 
