@@ -72,7 +72,7 @@ const pineconeIndex = pinecone.index('chat-rag');
 console.log("Conectado y listo para usar el índice de Pinecone: 'chat-rag'.");
 // Inicializar Pinecone DOS
 const pinecone2 = new Pinecone({apiKey: process.env.PINECONE_API_KEY2,});
-const pineconeIndex2 = pinecone.index('rag-normativas-uagrm'); 
+const pineconeIndex2 = pinecone2.index('rag-normativas-uagrm'); 
 console.log("Conectado y listo para usar el índice de Pinecone: 'rag-normativas-uagrm'.");
 
 const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
