@@ -128,7 +128,7 @@ const findRelevantChunksInNormativas = async (queryEmbedding, topK = 10) => {
             includeMetadata: true,
         });
         if (queryResponse.matches?.length) {
-            return queryResponse.matches.map(match => match.metadata.chunkText);
+            return queryResponse.matches.map(match => match.metadata.text);
         }
         return [];
     } catch (error) {
