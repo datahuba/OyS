@@ -54,7 +54,7 @@ mongoose.connect(process.env.MONGO_URI)
 
 // --- INICIALIZACIÓN DE SERVICIOS DE IA Y DBs ---
 const vertexAI = new VertexAI({ location: 'us-central1' });
-const vertexEmbeddingModel = vertexAI.getGenerativeModel({ model: "gemini-embedding-001" });
+//const vertexEmbeddingModel = vertexAI.getGenerativeModel({ model: "gemini-embedding-001" });
 // Modelos de Google AI
 const generativeModel = vertexAI.getGenerativeModel({model: 'gemini-2.5-pro',});
 
@@ -62,6 +62,10 @@ const generativeModel = vertexAI.getGenerativeModel({model: 'gemini-2.5-pro',});
 
 const genAI_for_embeddings = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_API_KEY);
 const embeddingModel = genAI_for_embeddings.getGenerativeModel({ model: "embedding-001" });
+
+const vertexEmbeddingModel = genAI_for_embeddings.getGenerativeModel({ model: "gemini-embedding-001" });
+
+
 // Inicializar Pinecone UNO
 const pinecone = new Pinecone({apiKey: process.env.PINECONE_API_KEY,});
 const pineconeIndex = pinecone.index('chat-rag'); 
@@ -147,15 +151,11 @@ const getEmbedding = async (text) => {
 
 const getVertexEmbedding = async (text) => {
     try {
-        const request = {
-            contents: [{ parts: [{ text: text }] }],
-        };
-        const result = await vertexEmbeddingModel.embedContents(request);
-        // La estructura de la respuesta de Vertex es un poco diferente
-        return result.embeddings[0].values;
+        const result = await vertexEmbeddingModel.embedContent(text);
+        return result.embedding.values;
     } catch (error) {
-        console.error("Error al generar embedding con Vertex AI:", error);
-        throw new Error("No se pudo generar el embedding con el modelo de Vertex.");
+        console.error("Error al generar embedding con AI Studio:", error);
+        throw new Error("No se pudo generar el embedding de compatibilidad.");
     }
 };
 
