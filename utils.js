@@ -44,8 +44,8 @@ async function extractTextWithMistral(filePath, mimetype) {
         });
 
         // --- CAMBIO AQUÍ: AÑADIDO LOG PARA DEPURACIÓN ---
-        console.log("Respuesta completa recibida de la API de Mistral:");
-        console.dir(ocrResponse, { depth: null }); // Esto imprimirá el objeto completo
+        //console.log("Respuesta completa recibida de la API de Mistral:");
+        //console.dir(ocrResponse, { depth: null }); // Esto imprimirá el objeto completo
 
         console.log("Extracción con Mistral AI completada con éxito.");
 
@@ -99,6 +99,8 @@ async function extractTextFromFile(file, generativeModel){
         } catch (error) {
             console.warn("pdf-parse falló. Usando fallback de Mistral AI...");
             text = await extractTextWithMistral(filePath, clientMimeType);
+            console.log(text);
+            
         }
     }
     // CASO 4: PPTX y VSDX (Delegar al microservicio)
