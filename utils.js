@@ -19,14 +19,14 @@ if (!mistralApiKey) {
 const mistralClient = new Mistral({ apiKey: mistralApiKey });
 
 
+// EN utils.js, REEMPLAZA LA FUNCIÓN ANTERIOR CON ESTA:
+
 async function extractTextWithMistral(filePath, mimetype) {
     console.log("Procesando con el cliente oficial de Mistral AI...");
     
     try {
         const fileBuffer = fs.readFileSync(filePath);
         const base64File = fileBuffer.toString('base64');
-        
-        // Construimos el Data URI como se muestra en la documentación de Mistral
         const dataUri = `data:${mimetype};base64,${base64File}`;
         
         const documentType = mimetype.startsWith('image/') ? 'image_url' : 'document_url';
@@ -43,11 +43,18 @@ async function extractTextWithMistral(filePath, mimetype) {
             document: documentPayload,
         });
 
+        // --- CAMBIO AQUÍ: AÑADIDO LOG PARA DEPURACIÓN ---
+        console.log("Respuesta completa recibida de la API de Mistral:");
+        console.dir(ocrResponse, { depth: null }); // Esto imprimirá el objeto completo
+
         console.log("Extracción con Mistral AI completada con éxito.");
 
         if (ocrResponse.pages && ocrResponse.pages.length > 0) {
             return ocrResponse.pages.map(page => page.content).join('\n\n');
         }
+
+        // --- CAMBIO AQUÍ: AÑADIDO WARNING ---
+        console.warn("ADVERTENCIA: La API de Mistral no devolvió ninguna página de contenido. El documento podría estar en blanco o ser ilegible.");
         return '';
 
     } catch (error) {
