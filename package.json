@@ -27,6 +27,7 @@
     "mongodb": "^6.18.0",
     "mongoose": "^8.16.3",
     "multer": "^1.4.5-lts.1",
+    "openai": "^6.3.0",
     "pdf-parse": "^1.1.1",
     "react-dropzone": "^14.2.3",
     "react-markdown": "^9.0.1",

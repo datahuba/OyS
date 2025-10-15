@@ -17,9 +17,13 @@ if (!mistralApiKey) {
     console.warn("ADVERTENCIA: La variable de entorno MISTRAL_API_KEY no está configurada.");
 }
 const mistralClient = new Mistral({ apiKey: mistralApiKey });
+// INICIALIZACIÓN DEL CLIENTE DE OPENAI 
+const OpenAI = require('openai');
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+});
 
 
-// EN utils.js, REEMPLAZA LA FUNCIÓN ANTERIOR CON ESTA:
 
 async function extractTextWithMistral(filePath, mimetype) {
     console.log("Procesando con el cliente oficial de Mistral AI...");
@@ -116,7 +120,7 @@ async function extractTextFromFile(file, generativeModel){
             });
             console.log('PDF recibido del servicio. Extrayendo texto...');
             const data = await pdf(response.data);
-            text = data.text;
+            
         } catch (error) {
             console.error("Error con el servicio de conversión:", error.message);
             throw new Error('La conversión remota del archivo falló.');
@@ -196,9 +200,50 @@ async function processAndFillForm(file, formType, generativeModel) {
     throw error; 
   }
 };
+// processAndFillForm con OPENAI ---
+async function processAndFillFormWithOpenAI(file, formType) {
+  console.log(`[OpenAI Service] Iniciando extracción de JSON para: ${file.originalname}`);
+  try {
+    const textContent = await extractTextFromFile(file);
+    if (!textContent || !textContent.trim()) {
+      throw new Error("No se pudo extraer contenido del archivo.");
+    }
 
+    const promptKey = `PROMPT_${formType.toUpperCase()}`;
+    const schemaPath = path.join(__dirname, 'schemas', `${formType}.schema.json`);
+    const [promptTemplate, schemaFileContent] = await Promise.all([
+        process.env[promptKey],
+        fs.promises.readFile(schemaPath, 'utf8')
+    ]);
+    if (!promptTemplate) {
+        throw new Error(`El prompt para ${formType} no se encontró en el archivo .env`);
+    }
+
+    let finalPrompt = promptTemplate.replace('__JSON_SCHEMA__', schemaFileContent);
+    finalPrompt = finalPrompt.replace('__TEXT_TO_PROCESS__', textContent);
+
+    console.log(`[OpenAI Service] Enviando prompt para ${formType} a la API de OpenAI...`);
+    
+    const response = await openai.chat.completions.create({
+        model: "gpt-4o", // O "gpt-3.5-turbo" si prefieres
+        messages: [{ role: "user", content: finalPrompt }],
+        response_format: { type: "json_object" }, 
+    });
+
+    const responseText = response.choices[0].message.content;
+
+    const jsonData = JSON.parse(responseText);
+    console.log(`[OpenAI Service] ¡JSON para ${formType} parseado con éxito!`);
+    return jsonData;
+
+  } catch (error) {
+    console.error(`[OpenAI Service] Error durante el procesamiento del ${formType}:`, error.message);
+    throw error; 
+  }
+};
 
 module.exports = {
     extractTextFromFile,
-    processAndFillForm
+    processAndFillForm,
+    processAndFillFormWithOpenAI,
 };

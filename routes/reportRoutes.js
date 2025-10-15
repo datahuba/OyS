@@ -7,7 +7,7 @@ const { protect } = require('../middleware/authMiddleware');
 const Chat = require('../models/Chat');
 const { VertexAI } = require('@google-cloud/vertexai');
 // Importamos las funciones que movimos a utils.js
-const { processAndFillForm } = require('../utils.js');
+const { processAndFillForm, processAndFillFormWithOpenAI } = require('../utils.js');
 
 // --- CONFIGURACIÓN DE MULTER ---
 // Lo configuramos para aceptar todos los posibles nombres de campo que usaremos.
@@ -31,89 +31,62 @@ async function handleReportGeneration(req, res, config) {
     const { chatId } = req.body;
     const files = req.files;
 
-    console.log(">>>> [INICIO DE PETICIÓN] <<<<");
-    console.log("NOMBRES DE CAMPO DE ARCHIVO RECIBIDOS:", Object.keys(files));
-
     if (!chatId) return res.status(400).json({ message: 'Se requiere un chatId.' });
-    if (!files || Object.keys(files).length === 0) return res.status(400).json({ message: 'Se debe proporcionar al menos un archivo.' });
+    if (!files || Object.keys(files).length === 0) return res.status(400).json({ message: 'Se deben proporcionar archivos.' });
 
+    // Obtenemos una lista plana de todos los archivos para el cleanup final
+    const processedFiles = Object.values(files).flat(); 
     let datosFormularios = {};
-    let processedFiles = [];
 
     try {
-        console.log(`[API /informes] Iniciando generación de informe tipo: ${config.reportType}`);
-        // --- INICIO DEL BLOQUE CORREGIDO ---
-
-console.log("> Iniciando procesamiento SECUENCIAL de formularios para evitar error 429...");
-
-// Usamos un bucle for...of que funciona bien con 'await'.
-for (const fieldName in config.formMappings) {
-    if (files[fieldName]) {
-        const file = files[fieldName][0];
-        const formType = config.formMappings[fieldName];
+        console.log(`[API /informes] Iniciando generación de informe HÍBRIDO tipo: ${config.reportType}`);
         
-        processedFiles.push(file);
-        console.log(`  > Procesando AHORA: ${file.originalname} para el campo '${formType}'`);
+        // --- ETAPA 1: Extracción de JSON en Paralelo con OpenAI ---
         
-        // AWAIT DENTRO DEL BUCLE: El código se detiene aquí hasta que la promesa se resuelve.
-        const jsonResult = await processAndFillForm(file, formType, generativeModel);
+        // Creamos un array de promesas, una para cada archivo, usando .map()
+        const processingPromises = Object.keys(config.formMappings).map(fieldName => {
+            if (files[fieldName]) {
+                const file = files[fieldName][0];
+                const formType = config.formMappings[fieldName];
+                console.log(`  > Asignando ${file.originalname} a OpenAI para extracción de JSON...`);
+                // Llamamos a la función específica de OpenAI
+                return processAndFillFormWithOpenAI(file, formType);
+            }
+            return null; // Devolvemos null para los campos de archivo que no se enviaron
+        }).filter(p => p !== null); // Filtramos los nulos
+
+        // Obtenemos los formTypes en el mismo orden para mapear los resultados correctamente
+        const formTypesInOrder = Object.keys(config.formMappings)
+            .filter(fieldName => files[fieldName])
+            .map(fieldName => config.formMappings[fieldName]);
+
+        console.log("> Ejecutando todas las extracciones de JSON en paralelo con OpenAI (`Promise.all`)...");
+        const results = await Promise.all(processingPromises);
+        console.log("> ¡Todas las extracciones de JSON con OpenAI han terminado!");
+
+        // Mapeamos los resultados de vuelta a nuestro objeto
+        results.forEach((jsonResult, index) => {
+            const formType = formTypesInOrder[index];
+            datosFormularios[formType] = jsonResult;
+        });
+
+        // --- ETAPA 2: Generación del Reporte Final con Google (Gemini) ---
         
-        // Una vez que tenemos el resultado, lo añadimos al objeto de datos.
-        datosFormularios[formType] = jsonResult;
-        console.log(`  > TERMINADO: ${file.originalname}. Datos para '${formType}' guardados.`);
-    }
-}
-
-console.log("> Procesamiento SECUENCIAL completado. 'datosFormularios' está lleno.");
-// En este punto, `datosFormularios` está 100% garantizado que estará lleno con todos los JSON.
-
-// --- FIN DEL BLOQUE CORREGIDO ---
-
-        // 2. Construir y ejecutar el prompt según la configuración
         let promptTemplate = process.env[config.promptEnvVar];
         if (!promptTemplate) throw new Error(`Prompt no encontrado en .env: ${config.promptEnvVar}`);
 
-        // Reemplazar placeholders en el prompt
-        // --- INICIO DE BLOQUE DE DEPURACIÓN AVANZADA ---
-        console.log("\n--- INICIANDO DEPURACIÓN DE REEMPLAZO DE PLACEHOLDER ---");
-
-        // 1. ¿Qué datos tenemos realmente?
-        console.log("Claves disponibles en 'datosFormularios':", Object.keys(datosFormularios));
-        for (const fieldName in config.formMappings) {
-            const formType = config.formMappings[fieldName]; // ej: 'form1', 'form2', 'comp'
-            
-            // Construimos el placeholder que esperamos encontrar en el prompt.
+        // Rellenamos el prompt con los JSONs que obtuvimos de OpenAI
+        for (const formType in datosFormularios) {
             const placeholder = `_JSON_${formType.toUpperCase()}_`;
-            console.log(`Intentando reemplazar el placeholder: "${placeholder}"`);
-            // Verificamos si tenemos datos para este formType.
-            console.log(`Últimos 500 caracteres del prompt ANTES del reemplazo:\n...${promptTemplate.slice(-500)}`);
-            console.log(`¿El prompt contiene "${placeholder}"? : ${promptTemplate.includes(placeholder)}`);
-            
-            if (datosFormularios[formType]) {
-                console.log(`> Reemplazando placeholder: ${placeholder}`);
-                promptTemplate = promptTemplate.replace(
-                    placeholder, 
-                    JSON.stringify(datosFormularios[formType], null, 2)
-                );
-            } else {
-                console.log(`> ADVERTENCIA: No se encontraron datos para '${formType}', no se reemplazará ${placeholder}.`);
-                // Opcional: reemplazar con un valor por defecto si no hay datos
-                // promptTemplate = promptTemplate.replace(placeholder, '"No proporcionado."');
-            }
+            promptTemplate = promptTemplate.replace(placeholder, JSON.stringify(datosFormularios[formType], null, 2));
         }
-                console.log("\n--- DEPURACIÓN FINAL ---");
-        // 5. ¿El placeholder sigue ahí después de todo?
-        const finalPlaceholder = `_JSON_COMP_`;
-        console.log(`Últimos 500 caracteres del prompt DESPUÉS del reemplazo:\n...${promptTemplate.slice(-500)}`);
-        console.log(`¿El placeholder "${finalPlaceholder}" sigue existiendo? : ${promptTemplate.includes(finalPlaceholder)}`);
-        console.log("--- FIN DE DEPURACIÓN ---\n");
 
-        console.log(`[Report Gen Service] Enviando prompt para ${config.reportType}...`);
+        console.log(`[Report Gen Service] Enviando prompt final a GOOGLE para ${config.reportType}...`);
         const request = { contents: [{ role: 'user', parts: [{ text: promptTemplate }] }] };
         const result = await generativeModel.generateContent(request);
         const generatedReportText = result.response.candidates[0].content.parts[0].text;
 
-        // 3. Guardar en la base de datos
+        // --- ETAPA 3: Guardar en la Base de Datos (tu código original) ---
         const updatedChat = await Chat.findByIdAndUpdate(chatId, {
             $set: { informeFinal: generatedReportText, ...datosFormularios },
             $push: { messages: { $each: [
@@ -135,6 +108,7 @@ console.log("> Procesamiento SECUENCIAL completado. 'datosFormularios' está lle
         processedFiles.forEach(file => fs.existsSync(file.path) && fs.unlinkSync(file.path));
     }
 }
+
 
 
 // ========================================================================
