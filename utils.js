@@ -50,7 +50,7 @@ async function extractTextWithMistral(filePath, mimetype) {
         console.log("Extracción con Mistral AI completada con éxito.");
 
         if (ocrResponse.pages && ocrResponse.pages.length > 0) {
-            return ocrResponse.pages.map(page => page.content).join('\n\n');
+            return ocrResponse.pages.map(page => page.markdown).join('\n\n');
         }
 
         // --- CAMBIO AQUÍ: AÑADIDO WARNING ---
