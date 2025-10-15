@@ -10,7 +10,7 @@ const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const DELAY_MS = 10;
 
-const Mistral = require('@mistralai/mistralai');
+const { Mistral } = require('@mistralai/mistralai');
 // Inicializa el cliente de Mistral una sola vez
 const mistralApiKey = process.env.MISTRAL_API_KEY;
 if (!mistralApiKey) {
