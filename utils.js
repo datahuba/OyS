@@ -8,103 +8,55 @@ const FormData = require('form-data');
 const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-const DELAY_MS = 10000;
+const DELAY_MS = 10;
 
-// --- NUEVO: Función para extraer texto de PDFs/Imágenes con Mistral AI ---
+const Mistral = require('@mistralai/mistralai');
+// Inicializa el cliente de Mistral una sola vez
+const mistralApiKey = process.env.MISTRAL_API_KEY;
+if (!mistralApiKey) {
+    console.warn("ADVERTENCIA: La variable de entorno MISTRAL_API_KEY no está configurada.");
+}
+const mistralClient = new Mistral({ apiKey: mistralApiKey });
+
+
 async function extractTextWithMistral(filePath, mimetype) {
-    console.log("Procesando con Mistral AI Document AI...");
+    console.log("Procesando con el cliente oficial de Mistral AI...");
     
-    // 1. Validar que la API Key esté disponible
-    const apiKey = process.env.MISTRAL_API_KEY;
-    if (!apiKey) {
-        throw new Error('La variable de entorno MISTRAL_API_KEY no está configurada.');
-    }
-
-    // 2. Leer el archivo y codificarlo en Base64
-    const fileBuffer = fs.readFileSync(filePath);
-    const base64File = fileBuffer.toString('base64');
-    
-    // 3. Configurar la llamada a la API de Mistral
-    const url = 'https://api.mistral.ai/v1/document-ai/ocr';
-    const headers = {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-    };
-    const payload = {
-        model: 'mistral-ocr-latest',
-        file: {
-            content: base64File,
-            mime_type: mimetype,
-        },
-    };
-
     try {
-        // Añadimos el delay que ya usabas
+        const fileBuffer = fs.readFileSync(filePath);
+        const base64File = fileBuffer.toString('base64');
+        
+        // Construimos el Data URI como se muestra en la documentación de Mistral
+        const dataUri = `data:${mimetype};base64,${base64File}`;
+        
+        const documentType = mimetype.startsWith('image/') ? 'image_url' : 'document_url';
+        const documentPayload = {
+            type: documentType,
+            ...(documentType === 'image_url' ? { imageUrl: dataUri } : { documentUrl: dataUri })
+        };
+        
         await delay(DELAY_MS);
         console.log(`[DELAY] Esperando ${DELAY_MS}ms antes de la llamada OCR de Mistral para ${filePath}...`);
 
-        // 4. Realizar la petición POST con axios
-        const response = await axios.post(url, payload, { headers });
+        const ocrResponse = await mistralClient.ocr.process({
+            model: "mistral-ocr-latest",
+            document: documentPayload,
+        });
 
-        // La API de Mistral devuelve el texto extraído en formato Markdown directamente en la respuesta
         console.log("Extracción con Mistral AI completada con éxito.");
-        return response.data; 
+
+        if (ocrResponse.pages && ocrResponse.pages.length > 0) {
+            return ocrResponse.pages.map(page => page.content).join('\n\n');
+        }
+        return '';
 
     } catch (error) {
-        // Mejorar el log de errores para la API de Mistral
-        if (error.response) {
-            console.error('Error detallado de la API de Mistral:', error.response.data);
-        } else {
-            console.error('Error al contactar la API de Mistral:', error.message);
-        }
+        console.error('Error detallado de la API de Mistral (cliente oficial):', error);
         throw new Error('La API de Mistral AI no pudo procesar el archivo.');
     }
 }
-// Función para extraer texto de PDFs con Gemini (nuestro fallback)
-async function extractTextWithGemini(filePath, mimetype, generativeModel) {
-    await delay(DELAY_MS);
-    console.log(`[DELAY] Esperando ${DELAY_MS}ms antes de la llamada OCR para ${filePath}...`);
 
-    console.log("Fallback: Intentando extracción de PDF con Vertex AI Vision...");
-    const fileBuffer = fs.readFileSync(filePath);
-    const filePart = { inlineData: { data: fileBuffer.toString("base64"), mimeType: mimetype } };
-    const prompt = "Extrae todo el texto de este documento. Devuelve únicamente el texto plano, sin ningún formato adicional, como si lo copiaras y pegaras. No resumas nada.";
-    
-    // El request debe tener un formato específico para Vertex AI
-    const request = {
-        contents: [{ role: 'user', parts: [ {text: prompt}, filePart ] }],
-    };
 
-    try {
-        const result = await generativeModel.generateContent(request);
-        // La estructura de la respuesta también cambia
-        return result.response.candidates[0].content.parts[0].text;
-    } catch (error) {
-        console.error('Error detallado de la API de Vertex AI:', error); 
-        throw new Error('La API de Vertex AI no pudo procesar el archivo.');
-    }
-}
-
-// --- NUEVO: Función para describir imágenes con Gemini ---
-async function describeImageWithGemini(filePath, mimetype, originalName, generativeModel) {
-    console.log("Procesando imagen con Vertex AI Vision...");
-    const fileBuffer = fs.readFileSync(filePath);
-    const filePart = { inlineData: { data: fileBuffer.toString("base64"), mimeType: mimetype } };
-    const prompt = "Describe detalladamente esta imagen. Si contiene texto, transcríbelo. Si es un diagrama, explica lo que representa. Si es una foto, describe la escena y los objetos.";
-    
-    const request = {
-        contents: [{ role: 'user', parts: [ {text: prompt}, filePart ] }],
-    };
-
-    try {
-        const result = await generativeModel.generateContent(request);
-        const description = result.response.candidates[0].content.parts[0].text;
-        return `Descripción de la imagen "${originalName}":\n${description}`;
-    } catch (error) {
-        console.error('Error detallado de la API de Vertex AI Vision:', error);
-        throw new Error('La API de Vertex AI no pudo procesar la imagen.');
-    }
-}
 async function extractTextFromFile(file, generativeModel){
     const filePath = file.path;
     const clientMimeType = file.mimetype;
