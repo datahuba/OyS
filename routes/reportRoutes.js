@@ -5,9 +5,10 @@ const multer = require('multer');
 const fs = require('fs');
 const { protect } = require('../middleware/authMiddleware');
 const Chat = require('../models/Chat');
-const { VertexAI } = require('@google-cloud/vertexai');
+//const { VertexAI } = require('@google-cloud/vertexai');
+const { OpenAI } = require('openai');
 // Importamos las funciones que movimos a utils.js
-const { processAndFillForm, processAndFillFormWithOpenAI } = require('../utils.js');
+const { processAndFillFormWithOpenAI } = require('../utils.js');
 
 // --- CONFIGURACIÓN DE MULTER ---
 // Lo configuramos para aceptar todos los posibles nombres de campo que usaremos.
@@ -19,8 +20,8 @@ const upload = multer({ dest: 'uploads/' }).fields([
 ]);
 
 // --- INICIALIZACIÓN DE IA ---
-const vertexAI = new VertexAI({ project: process.env.GOOGLE_CLOUD_PROJECT || 'onlyvertex-474004', location: 'us-central1' });
-const generativeModel = vertexAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+//const vertexAI = new VertexAI({ project: process.env.GOOGLE_CLOUD_PROJECT || 'onlyvertex-474004', location: 'us-central1' });
+//const generativeModel = vertexAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
 
 
 // ========================================================================
@@ -70,21 +71,25 @@ async function handleReportGeneration(req, res, config) {
             datosFormularios[formType] = jsonResult;
         });
 
-        // --- ETAPA 2: Generación del Reporte Final con Google (Gemini) ---
+         // --- ¡CAMBIO! ETAPA 2: Generación del Reporte Final con OpenAI ---
         
         let promptTemplate = process.env[config.promptEnvVar];
         if (!promptTemplate) throw new Error(`Prompt no encontrado en .env: ${config.promptEnvVar}`);
 
-        // Rellenamos el prompt con los JSONs que obtuvimos de OpenAI
         for (const formType in datosFormularios) {
             const placeholder = `_JSON_${formType.toUpperCase()}_`;
             promptTemplate = promptTemplate.replace(placeholder, JSON.stringify(datosFormularios[formType], null, 2));
         }
 
-        console.log(`[Report Gen Service] Enviando prompt final a GOOGLE para ${config.reportType}...`);
-        const request = { contents: [{ role: 'user', parts: [{ text: promptTemplate }] }] };
-        const result = await generativeModel.generateContent(request);
-        const generatedReportText = result.response.candidates[0].content.parts[0].text;
+        console.log(`[Report Gen Service] Enviando prompt final a OPENAI para ${config.reportType}...`);
+        
+        // ¡Llamada directa a la API de OpenAI!
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o", // O el modelo que prefieras
+            messages: [{ role: "user", content: promptTemplate }],
+        });
+
+        const generatedReportText = response.choices[0].message.content;
 
         // --- ETAPA 3: Guardar en la Base de Datos (tu código original) ---
         const updatedChat = await Chat.findByIdAndUpdate(chatId, {
