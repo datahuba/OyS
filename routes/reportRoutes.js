@@ -89,7 +89,7 @@ async function handleReportGeneration(req, res, config) {
         
         // ¡Llamada directa a la API de OpenAI!
         const response = await openai.chat.completions.create({
-            model: "gpt-4o", // O el modelo que prefieras
+            model: "gpt-5-nano", // O el modelo que prefieras
             messages: [{ role: "user", content: promptTemplate }],
         });
 

@@ -225,7 +225,7 @@ async function processAndFillFormWithOpenAI(file, formType) {
     console.log(`[OpenAI Service] Enviando prompt para ${formType} a la API de OpenAI...`);
     
     const response = await openai.chat.completions.create({
-        model: "gpt-4o", // O "gpt-3.5-turbo" si prefieres
+        model: "gpt-5-nano", // O "gpt-3.5-turbo" si prefieres
         messages: [{ role: "user", content: finalPrompt }],
         response_format: { type: "json_object" }, 
     });
