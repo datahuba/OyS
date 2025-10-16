@@ -386,6 +386,23 @@ app.post('/api/chat', protect, async (req, res) => {
         }
 
         const userQuery = conversationHistory[conversationHistory.length - 1].parts[0].text;
+        
+        // --- ¡NUEVO BLOQUE DE CÓDIGO PARA COMANDOS DE DEBUG! ---
+        if (userQuery === process.env.DEBUG_SECRET_ON) {
+            const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
+                debugMode: true,
+                $push: { messages: { sender: 'bot', text: 'Modo DEBUG de JSON activado para este chat.' }}
+            }, { new: true });
+            return res.status(200).json({ updatedChat });
+        }
+        if (userQuery === process.env.DEBUG_SECRET_OFF) {
+            const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
+                debugMode: false,
+                $push: { messages: { sender: 'bot', text: 'Modo DEBUG de JSON desactivado.' }}
+            }, { new: true });
+            return res.status(200).json({ updatedChat });
+        }
+        // --- FIN DEL NUEVO BLOQUE ---
 
         // --- MANEJO DE COMANDOS DE SUPERUSUARIO ---
         if (userQuery === process.env.SUPERUSER_SECRET && !currentChat.isSuperuserMode) {

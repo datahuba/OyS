@@ -95,13 +95,26 @@ async function handleReportGeneration(req, res, config) {
 
         const generatedReportText = response.choices[0].message.content;
 
-        // --- ETAPA 3: Guardar en la Base de Datos (tu código original) ---
+        // --- ETAPA 3: Guardar en la Base de Datos (CON LÓGICA DE DEBUG) ---
+        const userMessage = { sender: 'user', text: `Generar informe: ${config.reportType}` };
+        const aiMessage = { sender: 'ai', text: generatedReportText };
+        const messagesToPush = [userMessage, aiMessage];
+
+        const currentChat = await Chat.findById(chatId);
+
+        if (currentChat && currentChat.debugMode) {
+            const debugMessage = {
+                sender: 'bot',
+                text: "--- DEBUG: JSONs Extraídos ---\n```json\n" + 
+                      JSON.stringify(datosFormularios, null, 2) + 
+                      "\n```"
+            };
+            messagesToPush.push(debugMessage);
+        }
+
         const updatedChat = await Chat.findByIdAndUpdate(chatId, {
             $set: { informeFinal: generatedReportText, ...datosFormularios },
-            $push: { messages: { $each: [
-                { sender: 'user', text: `Generar informe: ${config.reportType}` },
-                { sender: 'ai', text: generatedReportText }
-            ] } }
+            $push: { messages: { $each: messagesToPush } }
         }, { new: true });
 
         if (!updatedChat) return res.status(404).json({ message: "Chat no encontrado." });

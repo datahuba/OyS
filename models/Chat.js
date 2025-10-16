@@ -49,6 +49,10 @@ const chatSchema = new mongoose.Schema({
           'miscellaneous'
       ]
     },
+  isSuperuserMode: {
+  type: Boolean,
+  default: false
+  },
    // --- NUEVO CAMPO PARA EL MODO SUPERUSUARIO ---
   isSuperuserMode: {
     type: Boolean,
