@@ -22,7 +22,11 @@ const upload = multer({ dest: 'uploads/' }).fields([
 // --- INICIALIZACIÓN DE IA ---
 //const vertexAI = new VertexAI({ project: process.env.GOOGLE_CLOUD_PROJECT || 'onlyvertex-474004', location: 'us-central1' });
 //const generativeModel = vertexAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
-
+// --- INICIALIZACIÓN DEL CLIENTE DE OPENAI (PARA LA GENERACIÓN DE REPORTES) ---
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+});
+console.log("[API /informes] Cliente de OpenAI inicializado para la generación de reportes.");
 
 // ========================================================================
 // --- MANEJADOR DE REPORTES UNIVERSAL ---
