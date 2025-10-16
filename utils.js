@@ -67,26 +67,6 @@ async function extractTextWithMistral(filePath, mimetype) {
     }
 }
 
-async function processPdfBuffer(pdfBuffer, filePathForFallback, mimeTypeForFallback) {
-    let text = '';
-    try {
-        console.log("[PDF Processor] Intentando extraer texto con pdf-parse...");
-        const data = await pdf(pdfBuffer);
-        text = data.text;
-        if (!text || !text.trim()) {
-            // Lanza un error para activar la lógica de fallback de forma consistente
-            throw new Error("pdf-parse no extrajo texto o el texto está vacío.");
-        }
-        console.log("[PDF Processor] Extracción con pdf-parse exitosa.");
-        return text;
-    } catch (error) {
-        console.warn(`[PDF Processor] pdf-parse falló: ${error.message}. Usando fallback de Mistral AI...`);
-        // El fallback necesita la ruta del archivo para poder leerlo y enviarlo a la API
-        // Es crucial que filePathForFallback sea la ruta del archivo original en disco.
-        text = await extractTextWithMistral(filePathForFallback, mimeTypeForFallback);
-        return text;
-    }
-}
 
 async function extractTextFromFile(file, generativeModel){
     const filePath = file.path;
@@ -113,14 +93,22 @@ async function extractTextFromFile(file, generativeModel){
         text = fullText.join('\n\n---\n\n');
     }
     // CASO 3: PDF (pdf-parse con fallback a Gemini)
-     else if (fileExt === '.pdf') {
-        console.log(`Procesando (PDF): ${file.originalname}`);
-        const dataBuffer = fs.readFileSync(filePath);
-        // Simplemente llamamos a nuestra nueva función especialista
-        text = await processPdfBuffer(dataBuffer, filePath, clientMimeType);
+    else if (fileExt === '.pdf') {
+        console.log(`Procesando localmente (PDF): ${file.originalname}`);
+        try {
+            const dataBuffer = fs.readFileSync(filePath);
+            const data = await pdf(dataBuffer);
+            text = data.text;
+            if (!text || !text.trim()) throw new Error("pdf-parse no extrajo texto.");
+        } catch (error) {
+            console.warn("pdf-parse falló. Usando fallback de Mistral AI...");
+            text = await extractTextWithMistral(filePath, clientMimeType);
+            console.log(text);
+            
+        }
     }
     // CASO 4: PPTX y VSDX (Delegar al microservicio)
-   else if (fileExt === '.pptx' || fileExt === '.vsdx'|| fileExt === '.ppt' || fileExt === '.vsd'|| fileExt === '.doc') {
+    else if (fileExt === '.pptx' || fileExt === '.vsdx'|| fileExt === '.ppt' || fileExt === '.vsd'|| fileExt === '.doc' || fileExt === '.vsd') {
         if (!CONVERSION_SERVICE_URL) throw new Error('El servicio de conversión no está configurado.');
         try {
             console.log(`Delegando (${fileExt.toUpperCase()}) ${file.originalname} al servicio de conversión...`);
@@ -130,10 +118,8 @@ async function extractTextFromFile(file, generativeModel){
                 headers: form.getHeaders(),
                 responseType: 'arraybuffer'
             });
-            console.log('PDF recibido del servicio. Procesando búfer...');
-            // ¡Reutilizamos nuestra función especialista con el búfer recibido!
-            // Para el fallback, le pasamos la ruta del archivo original (.doc, .ppt, etc.).
-            text = await processPdfBuffer(response.data, filePath, clientMimeType);
+            console.log('PDF recibido del servicio. Extrayendo texto...');
+            const data = await pdf(response.data);
             
         } catch (error) {
             console.error("Error con el servicio de conversión:", error.message);
