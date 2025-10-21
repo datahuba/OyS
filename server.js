@@ -423,35 +423,51 @@ app.post('/api/chat', protect, async (req, res) => {
         // --- LÓGICA DE CHAT NORMAL CON RAG ---
         // 1. Obtener documentos relevantes (del chat y globales)
         const documentIds = getDocumentsForActiveContext(currentChat);
-        console.log(`[DEBUG] Documentos del contexto activo ('${currentChat.activeContext}'):`, documentIds);
+        //console.log(`[DEBUG] Documentos del contexto activo ('${currentChat.activeContext}'):`, documentIds);
         const globalDocs = await GlobalDocument.find({});
         const globalDocumentIds = globalDocs.map(doc => doc.documentId);
-        console.log(`[DEBUG] Documentos Globales encontrados en la BD (${globalDocumentIds.length}):`, globalDocumentIds);
+        //console.log(`[DEBUG] Documentos Globales encontrados en la BD (${globalDocumentIds.length}):`, globalDocumentIds);
         const allSearchableIds = [...new Set([...documentIds, ...globalDocumentIds])];
-        console.log(`[DEBUG] Total de IDs únicos para la búsqueda en Pinecone:`, allSearchableIds);
+        //console.log(`[DEBUG] Total de IDs únicos para la búsqueda en Pinecone:`, allSearchableIds);
 
+         // Preparamos el historial de conversación original para enviarlo al modelo.
+        let contents = conversationHistory.map(msg => ({
+            role: msg.role,
+            parts: msg.parts
+        }));
 
         if (allSearchableIds.length > 0) {
             const queryEmbedding = await getEmbedding(userQuery);
             const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, allSearchableIds,20);
             console.log(`[DEBUG] Se encontraron ${relevantChunks.length} chunks relevantes en Pinecone.`);
+
             if (relevantChunks.length > 0) {
-                const contextString = "--- INICIO DEL CONTEXTO ---\n" + relevantChunks.join("\n---\n") + "\n--- FIN DEL CONTEXTO ---";
-                const userQueryWithContext = `${contextString}\n\nBasándote **estrictamente** en el contexto anterior, responde a la siguiente pregunta: ${userQuery}`;
-                
-                conversationHistory[conversationHistory.length - 1].parts[0].text = userQueryWithContext;
+            const contextString = "Contexto relevante de los documentos:\n" + 
+                                  "-------------------------------------\n" +
+                                  relevantChunks.join("\n---\n") +
+                                  "\n-------------------------------------\n" +
+                                  "Por favor, basa tu respuesta en la pregunta del usuario y en el contexto proporcionado.";
+            contents.unshift({ role: 'user', parts: [{ text: contextString }] });
+
             }
         }
 
-        const contents = conversationHistory.map(msg => ({
-            role: msg.role,
-            parts: msg.parts
-        }));
-        // 2. Generar respuesta y guardar en BD
-        const request = {contents: contents,};
-        const result = await generativeModel.generateContent(request);
-        const botText = result.response.candidates[0].content.parts[0].text;
+        let botText;
+        try {
+            // Usamos `startChat`, que está optimizado para conversaciones.
+            // Le pasamos el historial (que ahora incluye el contexto al inicio) MENOS la última pregunta del usuario.
+            const chatSession = generativeModel.startChat({ history: contents.slice(0, -1) });
 
+            // Enviamos la pregunta ORIGINAL del usuario como el último mensaje de la sesión.
+            const result = await chatSession.sendMessage(userQuery);
+            botText = result.response.text();
+
+        } catch (geminiError) {
+            console.error("Error con la API de Gemini:", geminiError);
+            return res.status(504).json({ message: `Error con la IA: ${geminiError.message}` });
+        }
+
+        //Guardar en Base de Datos y Responder
         const updatedChat = await Chat.findByIdAndUpdate(chatId, {
             $push: { messages: { $each: [
                 { sender: 'user', text: userQuery },
