@@ -153,7 +153,8 @@ const reportConfigs = {
         formMappings: {
             'form1File': 'form1',
             'form2File': 'form2',
-            'form3File': 'form3'
+            'form3File': 'form3',
+            'form4File': 'extra'
         }
     },
     consolidado: {
