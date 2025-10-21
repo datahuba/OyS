@@ -460,10 +460,12 @@ app.post('/api/chat', protect, async (req, res) => {
 
             // Enviamos la pregunta ORIGINAL del usuario como el último mensaje de la sesión.
             const result = await chatSession.sendMessage(userQuery);
-            botText = result.response.text();
+                const response = result.response;
+                botText = response.candidates[0].content.parts[0].text; 
 
         } catch (geminiError) {
             console.error("Error con la API de Gemini:", geminiError);
+            console.error("Detalles del error de Gemini:", JSON.stringify(geminiError, null, 2));
             return res.status(504).json({ message: `Error con la IA: ${geminiError.message}` });
         }
 
