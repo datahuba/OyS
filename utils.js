@@ -5,6 +5,7 @@ const xlsx = require('xlsx');
 const pdf = require('pdf-parse');
 const axios = require('axios');
 const FormData = require('form-data');
+const { google } = require('googleapis');
 const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -23,6 +24,58 @@ const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
+async function getTextViaGoogleDriveConversion(filePath, originalMimeType, originalFilename) {
+    console.log(`[Google Drive] Iniciando conversión para: ${originalFilename}`);
+
+    // La autenticación es automática si la variable de entorno está configurada
+    const auth = new google.auth.GoogleAuth({
+        scopes: ['https://www.googleapis.com/auth/drive']
+    });
+    const drive = google.drive({ version: 'v3', auth });
+    
+    let tempFileId = null;
+
+    try {
+        // Subir el archivo pidiendo su conversión a Google Docs
+        const uploadResponse = await drive.files.create({
+            requestBody: {
+                name: `temp_conversion_${Date.now()}_${originalFilename}`,
+                mimeType: 'application/vnd.google-apps.document' 
+            },
+            media: {
+                mimeType: originalMimeType,
+                body: fs.createReadStream(filePath)
+            }
+        });
+
+        tempFileId = uploadResponse.data.id;
+        if (!tempFileId) throw new Error('La subida a Google Drive no devolvió un ID de archivo.');
+        console.log(`[Google Drive] Archivo convertido con ID temporal: ${tempFileId}`);
+
+        // Exportar el archivo recién creado a texto plano
+        const exportResponse = await drive.files.export({
+            fileId: tempFileId,
+            mimeType: 'text/plain'
+        }, { responseType: 'text' });
+        
+        console.log(`[Google Drive] Extracción de texto completada.`);
+        return exportResponse.data;
+
+    } catch (error) {
+        console.error('[Google Drive] Error durante el proceso de conversión:', error.message);
+        throw new Error('La conversión con la API de Google Drive falló.');
+    } finally {
+        // Limpieza: Borrar el archivo temporal de Google Drive
+        if (tempFileId) {
+            try {
+                await drive.files.delete({ fileId: tempFileId });
+                console.log(`[Google Drive] Archivo temporal ${tempFileId} eliminado.`);
+            } catch (cleanupError) {
+                console.error(`[Google Drive] Fallo al eliminar el archivo temporal ${tempFileId}:`, cleanupError.message);
+            }
+        }
+    }
+}
 
 
 async function extractTextWithMistral(filePath, mimetype) {
@@ -71,6 +124,7 @@ async function extractTextWithMistral(filePath, mimetype) {
 async function extractTextFromFile(file, generativeModel){
     const filePath = file.path;
     const clientMimeType = file.mimetype;
+    const originalFilename = file.originalname;
     const fileExt = path.extname(file.originalname).toLowerCase();
     let text = '';
 
@@ -80,18 +134,14 @@ async function extractTextFromFile(file, generativeModel){
         const result = await mammoth.extractRawText({ path: filePath });
         text = result.value;
     }
-    // CASO 2: XLSX (xlsx)
-    else if (fileExt === '.xlsx'|| fileExt === '.xls') {
-        console.log(`Procesando localmente (XLSX): ${file.originalname}`);
-        const workbook = xlsx.readFile(filePath);
-        const fullText = [];
-        workbook.SheetNames.forEach(sheetName => {
-            const worksheet = workbook.Sheets[sheetName];
-            const sheetText = xlsx.utils.sheet_to_txt(worksheet);
-            if (sheetText) fullText.push(`Contenido de la hoja "${sheetName}":\n${sheetText}`);
-        });
-        text = fullText.join('\n\n---\n\n');
+   
+    // CASO 2: XLSX, PPTX y formatos de Office antiguos/complejos se delegan a Google Drive
+    else if (['.xlsx', '.xls', '.pptx', '.ppt', '.doc', '.vsdx', '.vsd'].includes(fileExt)) {
+        console.log(`Delegando (${fileExt.toUpperCase()}) a la API de Google Drive...`);
+        text = await getTextViaGoogleDriveConversion(filePath, clientMimeType, originalFilename);
     }
+    
+
     // CASO 3: PDF (pdf-parse con fallback a Gemini)
     else if (fileExt === '.pdf') {
         console.log(`Procesando localmente (PDF): ${file.originalname}`);
@@ -107,25 +157,7 @@ async function extractTextFromFile(file, generativeModel){
             
         }
     }
-    // CASO 4: PPTX y VSDX (Delegar al microservicio)
-    else if (fileExt === '.pptx' || fileExt === '.vsdx'|| fileExt === '.ppt' || fileExt === '.vsd'|| fileExt === '.doc' || fileExt === '.vsd') {
-        if (!CONVERSION_SERVICE_URL) throw new Error('El servicio de conversión no está configurado.');
-        try {
-            console.log(`Delegando (${fileExt.toUpperCase()}) ${file.originalname} al servicio de conversión...`);
-            const form = new FormData();
-            form.append('file', fs.createReadStream(filePath), file.originalname);
-            const response = await axios.post(CONVERSION_SERVICE_URL, form, {
-                headers: form.getHeaders(),
-                responseType: 'arraybuffer'
-            });
-            console.log('PDF recibido del servicio. Extrayendo texto...');
-            const data = await pdf(response.data);
-            
-        } catch (error) {
-            console.error("Error con el servicio de conversión:", error.message);
-            throw new Error('La conversión remota del archivo falló.');
-        }
-    }
+    
     // CASO 5: IMÁGENES
     else if (['.jpg', '.jpeg', '.png', '.webp'].includes(fileExt) || clientMimeType.startsWith('image/')) {
         console.log(`Procesando (Imagen) con Mistral OCR: ${file.originalname}`);
