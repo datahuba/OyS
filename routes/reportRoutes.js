@@ -16,6 +16,7 @@ const upload = multer({ dest: 'uploads/' }).fields([
     { name: 'form1File', maxCount: 1 },
     { name: 'form2File', maxCount: 1 },
     { name: 'form3File', maxCount: 1 },
+    { name: 'form4File', maxCount: 1 },
     { name: 'compFile', maxCount: 1 } // Campo para el consolidado
 ]);
 
