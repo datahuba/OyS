@@ -27,60 +27,75 @@ const openai = new OpenAI({
 async function getTextViaGoogleDriveConversion(filePath, originalMimeType, originalFilename) {
     console.log(`[Google Drive] Iniciando conversión para: ${originalFilename}`);
 
-    // --- ¡PASO 1: PEGA EL ID DE TU CARPETA AQUÍ! ---
-    // Reemplaza el valor de ejemplo con el ID real de tu carpeta de Google Drive.
     const GOOGLE_DRIVE_FOLDER_ID = '1f1ShEzlB-fY1_l-0YxWnhdTIWxejOBwP'; 
 
+    // Si usas keyFile: indica la ruta al JSON de la service account.
     const auth = new google.auth.GoogleAuth({
-        scopes: ['https://www.googleapis.com/auth/drive']
+        scopes: ['https://www.googleapis.com/auth/drive'],
+        // keyFile: '/path/to/service-account.json', // <- descomenta si usas service account local
+        // clientOptions: { subject: 'user@tu-dominio.com' } // <- si usas domain-wide delegation
     });
+
     const drive = google.drive({ version: 'v3', auth });
-    
+
     let tempFileId = null;
 
     try {
-        const uploadResponse = await drive.files.create({
+        // Subir y pedir conversión a Google Docs
+        const createRes = await drive.files.create({
             requestBody: {
                 name: `temp_conversion_${Date.now()}_${originalFilename}`,
                 mimeType: 'application/vnd.google-apps.document',
-                
-                // --- ¡PASO 2: ESTA LÍNEA SOLUCIONA EL ERROR! ---
-                // Le dice a la API que cree el archivo dentro de tu carpeta compartida,
-                // usando el espacio de tu cuenta en lugar del de la cuenta de servicio.
-                parents: [GOOGLE_DRIVE_FOLDER_ID] 
+                parents: [GOOGLE_DRIVE_FOLDER_ID]
             },
             media: {
                 mimeType: originalMimeType,
                 body: fs.createReadStream(filePath)
-            }
+            },
+            supportsAllDrives: true,
+            fields: 'id'
         });
 
-        tempFileId = uploadResponse.data.id;
-        if (!tempFileId) throw new Error('La subida a Google Drive no devolvió un ID de archivo.');
+        tempFileId = createRes.data.id;
+        if (!tempFileId) throw new Error('La subida no devolvió ID de archivo.');
+
         console.log(`[Google Drive] Archivo convertido con ID temporal: ${tempFileId}`);
 
-        const exportResponse = await drive.files.export({
+        // Exportar a texto plano — usar arraybuffer y convertir a string
+        const exportRes = await drive.files.export({
             fileId: tempFileId,
             mimeType: 'text/plain'
-        }, { responseType: 'text' });
-        
-        console.log(`[Google Drive] Extracción de texto completada.`);
-        return exportResponse.data;
+        }, { responseType: 'arraybuffer', supportsAllDrives: true });
+
+        const exportedBuffer = Buffer.from(exportRes.data);
+        const text = exportedBuffer.toString('utf8');
+
+        console.log(`[Google Drive] Extracción de texto completada. ${text.length} bytes.`);
+        return text;
 
     } catch (error) {
-        console.error('[Google Drive] Error durante el proceso de conversión:', error.message);
+        // Log más detallado para depurar
+        console.error('[Google Drive] Error durante el proceso de conversión:');
+        console.error('message:', error.message);
+        if (error.code) console.error('code:', error.code);
+        if (error.errors) console.error('errors:', JSON.stringify(error.errors, null, 2));
+        if (error.response && error.response.data) {
+            console.error('response.data:', typeof error.response.data === 'object' ? JSON.stringify(error.response.data, null, 2) : error.response.data);
+        }
         throw new Error('La conversión con la API de Google Drive falló.');
     } finally {
         if (tempFileId) {
             try {
-                await drive.files.delete({ fileId: tempFileId });
+                await drive.files.delete({ fileId: tempFileId, supportsAllDrives: true });
                 console.log(`[Google Drive] Archivo temporal ${tempFileId} eliminado.`);
             } catch (cleanupError) {
                 console.error(`[Google Drive] Fallo al eliminar el archivo temporal ${tempFileId}:`, cleanupError.message);
+                if (cleanupError.response && cleanupError.response.data) console.error(cleanupError.response.data);
             }
         }
     }
 }
+
 
 async function extractTextWithMistral(filePath, mimetype) {
     console.log("Procesando con el cliente oficial de Mistral AI...");
