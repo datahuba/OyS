@@ -27,7 +27,10 @@ const openai = new OpenAI({
 async function getTextViaGoogleDriveConversion(filePath, originalMimeType, originalFilename) {
     console.log(`[Google Drive] Iniciando conversión para: ${originalFilename}`);
 
-    // La autenticación es automática si la variable de entorno está configurada
+    // --- ¡PASO 1: PEGA EL ID DE TU CARPETA AQUÍ! ---
+    // Reemplaza el valor de ejemplo con el ID real de tu carpeta de Google Drive.
+    const GOOGLE_DRIVE_FOLDER_ID = '1f1ShEzlB-fY1_l-0YxWnhdTIWxejOBwP'; 
+
     const auth = new google.auth.GoogleAuth({
         scopes: ['https://www.googleapis.com/auth/drive']
     });
@@ -36,11 +39,15 @@ async function getTextViaGoogleDriveConversion(filePath, originalMimeType, origi
     let tempFileId = null;
 
     try {
-        // Subir el archivo pidiendo su conversión a Google Docs
         const uploadResponse = await drive.files.create({
             requestBody: {
                 name: `temp_conversion_${Date.now()}_${originalFilename}`,
-                mimeType: 'application/vnd.google-apps.document' 
+                mimeType: 'application/vnd.google-apps.document',
+                
+                // --- ¡PASO 2: ESTA LÍNEA SOLUCIONA EL ERROR! ---
+                // Le dice a la API que cree el archivo dentro de tu carpeta compartida,
+                // usando el espacio de tu cuenta en lugar del de la cuenta de servicio.
+                parents: [GOOGLE_DRIVE_FOLDER_ID] 
             },
             media: {
                 mimeType: originalMimeType,
@@ -52,7 +59,6 @@ async function getTextViaGoogleDriveConversion(filePath, originalMimeType, origi
         if (!tempFileId) throw new Error('La subida a Google Drive no devolvió un ID de archivo.');
         console.log(`[Google Drive] Archivo convertido con ID temporal: ${tempFileId}`);
 
-        // Exportar el archivo recién creado a texto plano
         const exportResponse = await drive.files.export({
             fileId: tempFileId,
             mimeType: 'text/plain'
@@ -65,7 +71,6 @@ async function getTextViaGoogleDriveConversion(filePath, originalMimeType, origi
         console.error('[Google Drive] Error durante el proceso de conversión:', error.message);
         throw new Error('La conversión con la API de Google Drive falló.');
     } finally {
-        // Limpieza: Borrar el archivo temporal de Google Drive
         if (tempFileId) {
             try {
                 await drive.files.delete({ fileId: tempFileId });
@@ -76,7 +81,6 @@ async function getTextViaGoogleDriveConversion(filePath, originalMimeType, origi
         }
     }
 }
-
 
 async function extractTextWithMistral(filePath, mimetype) {
     console.log("Procesando con el cliente oficial de Mistral AI...");
