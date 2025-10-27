@@ -184,51 +184,48 @@ else if (['.pptx','.vsdx','.ppt','.vsd','.doc','.xls'].includes(fileExt)) {
     console.log(`Delegando la conversión de (${originalFilename}) a ${CONVERSION_SERVICE_URL}...`);
 
     try {
-        // 1. Crear un formulario de datos para enviar el archivo.
-        // Esto es equivalente a un <form> HTML con un <input type="file">.
-        const formData = new FormData();
-        
-        // 2. Adjuntar el buffer del archivo al formulario.
-        // El primer argumento 'file' es el nombre del campo que el microservicio esperará.
-        // El segundo es el contenido del archivo.
-        // El tercero es el nombre del archivo original.
-        formData.append('file', fileBuffer, originalFilename);
+    // 1. LEER EL ARCHIVO DESDE EL DISCO
+    // Esta es la línea que faltaba. Lee el contenido del archivo en un buffer.
+    const fileContentBuffer = await fs.readFile(filePath);
 
-        // 3. Realizar la petición POST al microservicio de conversión.
-        // Se envía el formulario y se especifica que la respuesta esperada es un stream de datos.
-        const response = await axios.post(CONVERSION_SERVICE_URL, formData, {
-            headers: {
-                // Axios y form-data se encargan de establecer el 'Content-Type' a 'multipart/form-data'
-                // y de calcular los boundaries necesarios.
-                ...formData.getHeaders()
-            },
-            // 'arraybuffer' es crucial para recibir el archivo PDF de vuelta como datos binarios.
-            responseType: 'arraybuffer' 
-        });
+    // 2. Crear un formulario de datos para enviar el archivo.
+    const formData = new FormData();
+    
+    // 3. Adjuntar el buffer del archivo al formulario.
+    // Usa la variable que acabas de crear: fileContentBuffer.
+    formData.append('file', fileContentBuffer, originalFilename);
 
-        // 4. Devolver los datos del PDF convertido.
-        // La respuesta (`response.data`) contendrá el buffer del archivo PDF.
-        // Ahora puedes hacer lo que necesites con él: guardarlo, enviarlo al cliente, etc.
-        console.log(`Conversión exitosa desde el microservicio. Se recibió un PDF de ${response.data.length} bytes.`);
-        
-        // Aquí retornarías el resultado para que el resto de tu aplicación lo procese.
-        // Por ejemplo:
-        // return response.data; 
+    // 4. Realizar la petición POST al microservicio de conversión.
+    console.log(`Enviando ${fileContentBuffer.length} bytes a ${CONVERSION_SERVICE_URL}...`);
+    const response = await axios.post(CONVERSION_SERVICE_URL, formData, {
+        headers: {
+            ...formData.getHeaders()
+        },
+        responseType: 'arraybuffer' 
+    });
 
-    } catch (error) {
-        // Manejo de errores mejorado para dar más contexto.
-        console.error("Error al comunicarse con el microservicio de conversión:", error.message);
-        if (error.response) {
-            // El error vino desde el microservicio (ej. error 400, 500).
-            console.error("Respuesta del microservicio:", error.response.status, error.response.data.toString());
-            throw new Error(`El microservicio de conversión falló con el código de estado ${error.response.status}.`);
-        } else if (error.request) {
-            // La petición se hizo pero no se recibió respuesta.
-            throw new Error(`No se recibió respuesta desde el microservicio en ${CONVERSION_SERVICE_URL}.`);
-        } else {
-            // Ocurrió un error al configurar la petición.
-            throw new Error(`Error al configurar la llamada al microservicio: ${error.message}`);
-        }
+    // 5. Procesar la respuesta
+    console.log(`Conversión exitosa desde el microservicio. Se recibió un PDF de ${response.data.length} bytes.`);
+    
+    // IMPORTANTE: Ahora debes hacer algo con el PDF recibido.
+    // El microservicio te devuelve el PDF, pero esta función debe devolver TEXTO.
+    // Necesitas procesar el PDF que te devolvió el microservicio.
+    // Podrías reutilizar tu lógica del CASO 3 (PDF).
+    
+    const pdfParser = require('pdf-parse'); // Asegúrate de que pdf-parse esté disponible
+    const data = await pdfParser(response.data);
+    text = data.text; // Extrae el texto del PDF convertido.
+
+} catch (error) {
+    // ... (tu bloque catch es correcto y no necesita cambios)
+    console.error("Error al comunicarse con el microservicio de conversión:", error.message);
+    if (error.response) {
+        console.error("Respuesta del microservicio:", error.response.status, error.response.data.toString());
+        throw new Error(`El microservicio de conversión falló con el código de estado ${error.response.status}.`);
+    } else if (error.request) {
+        throw new Error(`No se recibió respuesta desde el microservicio en ${CONVERSION_SERVICE_URL}.`);
+    } else {
+        throw new Error(`Error al configurar la llamada al microservicio: ${error.message}`);
     }
 }
     
