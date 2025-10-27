@@ -227,7 +227,7 @@ else if (['.pptx','.vsdx','.ppt','.vsd','.doc','.xls'].includes(fileExt)) {
     } else {
         throw new Error(`Error al configurar la llamada al microservicio: ${error.message}`);
     }
-}
+}}
     
 
     // CASO 3: PDF (pdf-parse con fallback a Gemini)
