@@ -167,8 +167,9 @@ app.post('/api/chats/:chatId/context', protect, async (req, res) => {
     const { chatId } = req.params;
     const { newContext } = req.body;
 
-    // Validamos que el contexto enviado sea válido
-    const validContexts = CONTEXT_TRIGGERS.map(t => t.contextName);
+    // 1. VALIDACIÓN ROBUSTA (de mi versión)
+    // Lee la lista de contextos válidos directamente desde el modelo de la base de datos.
+    const validContexts = Chat.schema.path('activeContext').enumValues;
     if (!newContext || !validContexts.includes(newContext)) {
         return res.status(400).json({ message: 'Contexto inválido o no proporcionado.' });
     }
@@ -179,18 +180,23 @@ app.post('/api/chats/:chatId/context', protect, async (req, res) => {
             return res.status(404).json({ message: "Chat no encontrado." });
         }
 
-        // Si el contexto ya es el actual, no hacemos nada para evitar mensajes duplicados
         if (chat.activeContext === newContext) {
-            return res.status(200).json({ updatedChat: chat });
+            return res.status(200).json({ 
+                message: "El contexto ya era el activo.",
+                updatedChat: chat 
+            });
         }
 
-        // Buscamos el mensaje de confirmación en nuestra configuración
+        // 2. MENSAJES PERSONALIZADOS (de tu versión)
+        // Buscamos un mensaje de confirmación específico.
         const trigger = CONTEXT_TRIGGERS.find(t => t.contextName === newContext);
-        const botMessage = trigger ? trigger.responseMessage : `Contexto cambiado a ${newContext}.`;
+        const botMessageText = trigger && trigger.responseMessage 
+            ? trigger.responseMessage 
+            : `Contexto cambiado a '${newContext}'.`;
 
         const updatedChat = await Chat.findByIdAndUpdate(chatId, {
-            activeContext: newContext,
-            $push: { messages: { sender: 'bot', text: botMessage } }
+            $set: { activeContext: newContext },
+            $push: { messages: { sender: 'bot', text: botMessageText } }
         }, { new: true });
 
         res.status(200).json({ updatedChat });
@@ -200,6 +206,8 @@ app.post('/api/chats/:chatId/context', protect, async (req, res) => {
         res.status(500).json({ message: "Error del servidor al cambiar el contexto." });
     }
 });
+
+
 
 // --- RUTA DE LA API PARA OBTENER TODOS LOS CONTEXTOS DISPONIBLES ---
 app.get('/api/contexts', (req, res) => {
