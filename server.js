@@ -201,6 +201,21 @@ app.post('/api/chats/:chatId/context', protect, async (req, res) => {
     }
 });
 
+// --- RUTA DE LA API PARA OBTENER TODOS LOS CONTEXTOS DISPONIBLES ---
+app.get('/api/contexts', (req, res) => {
+    try {
+        // Extraemos solo los nombres de los contextos desde la configuración CONTEXT_TRIGGERS
+        const availableContexts = CONTEXT_TRIGGERS.map(trigger => trigger.contextName);
+
+        // Respondemos con la lista de contextos en formato JSON
+        // Es una buena práctica devolver un objeto en lugar de un array directamente
+        res.status(200).json({ contexts: availableContexts });
+
+    } catch (error) {
+        console.error("Error al obtener la lista de contextos:", error);
+        res.status(500).json({ message: "Error del servidor al recuperar los contextos." });
+    }
+});
 
 
 app.get('/api/chats', protect, async (req, res) => {
