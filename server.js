@@ -294,6 +294,7 @@ app.post('/api/process-document', protect, upload, async (req, res) => {
     }
     
     const allowedTypes = [
+    'miscellaneous',
     'chat',
     'compatibilizacionFacultades', 
     'consolidadoFacultades', 
