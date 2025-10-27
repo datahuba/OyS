@@ -49,7 +49,8 @@ const chatSchema = new mongoose.Schema({
           'pyp',
           'context6',
           'context7',
-          'context8'
+          'context8',
+          'miscellaneous'
 
       ]
     },
