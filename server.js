@@ -187,16 +187,8 @@ app.post('/api/chats/:chatId/context', protect, async (req, res) => {
             });
         }
 
-        // 2. MENSAJES PERSONALIZADOS (de tu versión)
-        // Buscamos un mensaje de confirmación específico.
-        const trigger = CONTEXT_TRIGGERS.find(t => t.contextName === newContext);
-        const botMessageText = trigger && trigger.responseMessage 
-            ? trigger.responseMessage 
-            : `Contexto cambiado a '${newContext}'.`;
-
         const updatedChat = await Chat.findByIdAndUpdate(chatId, {
-            $set: { activeContext: newContext },
-            $push: { messages: { sender: 'bot', text: botMessageText } }
+            $set: { activeContext: newContext }
         }, { new: true });
 
         res.status(200).json({ updatedChat });
