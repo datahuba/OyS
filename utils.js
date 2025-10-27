@@ -292,9 +292,69 @@ async function processAndFillFormWithOpenAI(file, formType) {
     throw error; 
   }
 };
+async function processMultipleFilesAndFillForm(files, formType) {
+  console.log(`[Multi-File Service] Iniciando extracción de JSON para ${files.length} archivos (tipo: ${formType}).`);
+  
+  try {
+    // --- ETAPA 1: Extracción de texto secuencial y concatenación ---
+    let allExtractedTexts = [];
+    console.log("> Extrayendo texto de cada archivo uno por uno...");
 
+    // Usamos un bucle for...of para poder usar 'await' correctamente dentro.
+    for (const file of files) {
+        console.log(`  > Procesando: ${file.originalname}`);
+        const textContent = await extractTextFromFile(file);
+        
+        // ¡Mejora! Añadimos un separador y el nombre del archivo para darle contexto a la IA.
+        const formattedText = `--- INICIO DEL DOCUMENTO: ${file.originalname} ---\n\n${textContent}\n\n--- FIN DEL DOCUMENTO: ${file.originalname} ---`;
+        allExtractedTexts.push(formattedText);
+    }
+    
+    // Unimos todo el texto extraído en una sola gran cadena de texto.
+    const combinedText = allExtractedTexts.join('\n\n');
+    
+    if (!combinedText || !combinedText.trim()) {
+      throw new Error("No se pudo extraer contenido de ninguno de los archivos.");
+    }
+
+    // --- ETAPA 2: Una sola llamada a OpenAI con el texto combinado ---
+    const promptKey = `PROMPT_${formType.toUpperCase()}`;
+    const schemaPath = path.join(__dirname, 'schemas', `${formType}.schema.json`);
+    
+    const [promptTemplate, schemaFileContent] = await Promise.all([
+        process.env[promptKey],
+        fs.promises.readFile(schemaPath, 'utf8')
+    ]);
+
+    if (!promptTemplate) {
+        throw new Error(`El prompt para ${formType} no se encontró en el archivo .env`);
+    }
+
+    let finalPrompt = promptTemplate.replace('__JSON_SCHEMA__', schemaFileContent);
+    finalPrompt = finalPrompt.replace('__TEXT_TO_PROCESS__', combinedText); // Usamos el texto combinado
+
+    console.log(`[Multi-File Service] Enviando prompt combinado a la API de OpenAI...`);
+    
+    const response = await openai.chat.completions.create({
+        model: "gpt-5-nano",
+        messages: [{ role: "user", content: finalPrompt }],
+        response_format: { type: "json_object" }, 
+    });
+
+    const responseText = response.choices[0].message.content;
+    const jsonData = JSON.parse(responseText);
+    
+    console.log(`[Multi-File Service] ¡JSON combinado para ${formType} parseado con éxito!`);
+    return jsonData;
+
+  } catch (error) {
+    console.error(`[Multi-File Service] Error durante el procesamiento de múltiples archivos para ${formType}:`, error.message);
+    throw error; 
+  }
+};
 module.exports = {
     extractTextFromFile,
     processAndFillForm,
     processAndFillFormWithOpenAI,
+    processMultipleFilesAndFillForm,
 };

@@ -40,13 +40,17 @@ const chatSchema = new mongoose.Schema({
   activeContext: {
       type: String,
       required: true,
-      default: 'miscellaneous', // El contexto general por defecto
+      default: 'chat', // El contexto general por defecto
       enum: [
-          'compatibilizacionFacultades', 
-          'consolidadoFacultades', 
-          'compatibilizacionAdministrativo', 
-          'consolidadoAdministrativo',
-          'miscellaneous'
+          'chat',
+          'compatibilizacion', 
+          'normativas', 
+          'mof',
+          'pyp',
+          'context6',
+          'context7',
+          'context8'
+
       ]
     },
   isSuperuserMode: {

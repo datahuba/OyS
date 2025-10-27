@@ -9,15 +9,16 @@ const Chat = require('../models/Chat');
 const { OpenAI } = require('openai');
 // Importamos las funciones que movimos a utils.js
 const { processAndFillFormWithOpenAI } = require('../utils.js');
+const { processMultipleFilesAndFillForm } = require('../utils.js');
 
 // --- CONFIGURACIÓN DE MULTER ---
 // Lo configuramos para aceptar todos los posibles nombres de campo que usaremos.
 const upload = multer({ dest: 'uploads/' }).fields([
-    { name: 'form1File', maxCount: 1 },
-    { name: 'form2File', maxCount: 1 },
-    { name: 'form3File', maxCount: 1 },
-    { name: 'form4File', maxCount: 1 },
-    { name: 'compFile', maxCount: 1 } // Campo para el consolidado
+    { name: 'form1File', maxCount: 20 },
+    { name: 'form2File', maxCount: 20 },
+    { name: 'form3File', maxCount: 20 },
+    { name: 'form4File', maxCount: 20 },
+    { name: 'compFile', maxCount: 20 } // Campo para el consolidado
 ]);
 
 // --- INICIALIZACIÓN DE IA ---
@@ -48,33 +49,37 @@ async function handleReportGeneration(req, res, config) {
         console.log(`[API /informes] Iniciando generación de informe HÍBRIDO tipo: ${config.reportType}`);
         
         // --- ETAPA 1: Extracción de JSON en Paralelo con OpenAI ---
-        
-        // Creamos un array de promesas, una para cada archivo, usando .map()
-        const processingPromises = Object.keys(config.formMappings).map(fieldName => {
-            if (files[fieldName]) {
-                const file = files[fieldName][0];
+        console.log("> Preparando tareas de extracción de JSON para todos los archivos...");
+         const processingPromises = Object.keys(config.formMappings).map(fieldName => {
+            // Verificamos si se subieron archivos para este campo (ej. 'form1File')
+            if (files[fieldName] && files[fieldName].length > 0) {
                 const formType = config.formMappings[fieldName];
-                console.log(`  > Asignando ${file.originalname} a OpenAI para extracción de JSON...`);
-                // Llamamos a la función específica de OpenAI
-                return processAndFillFormWithOpenAI(file, formType);
+                const filesForThisType = files[fieldName]; // Este es el ARRAY de archivos
+
+                console.log(`  > Asignando ${filesForThisType.length} archivos al servicio multi-documento para el tipo: ${formType}`);
+                
+                // --- ¡CAMBIO CLAVE AQUÍ! ---
+                // Llamamos a la nueva función, pasándole el array completo de archivos para este tipo.
+                return processMultipleFilesAndFillForm(filesForThisType, formType)
+                    .then(jsonResult => ({ formType, jsonResult })); // Devolvemos un objeto para saber a qué tipo pertenece el resultado
             }
-            return null; // Devolvemos null para los campos de archivo que no se enviaron
-        }).filter(p => p !== null); // Filtramos los nulos
+            return null; // Si no hay archivos para este campo, no hacemos nada.
+        }).filter(p => p !== null);
 
-        // Obtenemos los formTypes en el mismo orden para mapear los resultados correctamente
-        const formTypesInOrder = Object.keys(config.formMappings)
-            .filter(fieldName => files[fieldName])
-            .map(fieldName => config.formMappings[fieldName]);
+        if (processingPromises.length === 0) {
+            throw new Error("No se encontraron archivos válidos para procesar según la configuración.");
+        }
 
-        console.log("> Ejecutando todas las extracciones de JSON en paralelo con OpenAI (`Promise.all`)...");
+        console.log(`> Ejecutando ${processingPromises.length} extracciones de JSON en paralelo (una por tipo de formulario)...`);
         const results = await Promise.all(processingPromises);
-        console.log("> ¡Todas las extracciones de JSON con OpenAI han terminado!");
+        console.log("> ¡Todas las extracciones de JSON han terminado!");
 
-        // Mapeamos los resultados de vuelta a nuestro objeto
-        results.forEach((jsonResult, index) => {
-            const formType = formTypesInOrder[index];
-            datosFormularios[formType] = jsonResult;
+        // Mapeamos los resultados de vuelta a nuestro objeto `datosFormularios`
+        // El resultado de `processMultipleFilesAndFillForm` es un único JSON, no un array de JSONs.
+        results.forEach(result => {
+            datosFormularios[result.formType] = result.jsonResult;
         });
+        
 
          // --- ¡CAMBIO! ETAPA 2: Generación del Reporte Final con OpenAI ---
         
