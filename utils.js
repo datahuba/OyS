@@ -140,24 +140,49 @@ async function extractTextWithMistral(filePath, mimetype) {
 }
 
 
-async function extractTextFromFile(file, generativeModel){
+async function extractTextFromFile(file){
     const filePath = file.path;
     const clientMimeType = file.mimetype;
     const originalFilename = file.originalname;
     const fileExt = path.extname(file.originalname).toLowerCase();
     let text = '';
 
-    // CASO 1: DOCX (mammoth)
+    // CASO 0: DOCX (mammoth)
     if (fileExt === '.docx'){
         console.log(`Procesando localmente (DOCX): ${file.originalname}`);
         const result = await mammoth.extractRawText({ path: filePath });
         text = result.value;
     }
    
-    // CASO 2: XLSX, PPTX y formatos de Office antiguos/complejos se delegan a Google Drive
-    else if (['.xlsx', '.xls', '.pptx', '.ppt', '.doc', '.vsdx', '.vsd'].includes(fileExt)) {
-        console.log(`Delegando (${fileExt.toUpperCase()}) a la API de Google Drive...`);
-        text = await getTextViaGoogleDriveConversion(filePath, clientMimeType, originalFilename);
+    // CASO 1: XLSX 
+    else if (fileExt === '.xlsx') {
+        console.log(`Procesando localmente (XLSX): ${file.originalname}`);
+        const workbook = xlsx.readFile(filePath);
+        const fullText = [];
+        // Iteramos sobre cada hoja del libro de Excel
+        workbook.SheetNames.forEach(sheetName => {
+            const worksheet = workbook.Sheets[sheetName];
+            // Convertimos el contenido de la hoja a texto plano
+            const sheetText = xlsx.utils.sheet_to_txt(worksheet);
+            if (sheetText && sheetText.trim()) {
+                // Añadimos el contenido con un encabezado para dar contexto
+                fullText.push(`--- Contenido de la hoja: "${sheetName}" ---\n${sheetText}`);
+            }
+        });
+        // Unimos el texto de todas las hojas
+        text = fullText.join('\n\n');
+    }
+
+    // CASO 2: PPTX y formatos de Office antiguos/complejos se delegan a Google Drive
+    else if (['.pptx','.vsdx','.ppt','.vsd','.doc','.xls'].includes(fileExt)) {
+        const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
+        if (!CONVERSION_SERVICE_URL) {
+            // Si no hay servicio, lanzamos un error claro en lugar de fallar silenciosamente.
+            throw new Error(`La conversión para el tipo de archivo ${fileExt} requiere un microservicio, pero CONVERSION_SERVICE_URL no está configurada.`);
+        }
+        
+        console.log(`Delegando (${fileExt.toUpperCase()}) a tu microservicio en Cloud Run...`);
+        throw new Error(`La lógica para el microservicio de conversión de ${fileExt} aún no está implementada en este bloque.`);
     }
     
 
@@ -176,6 +201,7 @@ async function extractTextFromFile(file, generativeModel){
             
         }
     }
+    
     
     // CASO 5: IMÁGENES
     else if (['.jpg', '.jpeg', '.png', '.webp'].includes(fileExt) || clientMimeType.startsWith('image/')) {
