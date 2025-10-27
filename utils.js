@@ -173,17 +173,64 @@ async function extractTextFromFile(file){
         text = fullText.join('\n\n');
     }
 
-    // CASO 2: PPTX y formatos de Office antiguos/complejos se delegan a Google Drive
-    else if (['.pptx','.vsdx','.ppt','.vsd','.doc','.xls'].includes(fileExt)) {
-        const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
-        if (!CONVERSION_SERVICE_URL) {
-            // Si no hay servicio, lanzamos un error claro en lugar de fallar silenciosamente.
-            throw new Error(`La conversión para el tipo de archivo ${fileExt} requiere un microservicio, pero CONVERSION_SERVICE_URL no está configurada.`);
-        }
-        
-        console.log(`Delegando (${fileExt.toUpperCase()}) a tu microservicio en Cloud Run...`);
-        throw new Error(`La lógica para el microservicio de conversión de ${fileExt} aún no está implementada en este bloque.`);
+// CASO 2: PPTX y formatos de Office antiguos/complejos se delegan a Google Drive
+else if (['.pptx','.vsdx','.ppt','.vsd','.doc','.xls'].includes(fileExt)) {
+    const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
+    if (!CONVERSION_SERVICE_URL) {
+        // Si no hay servicio, lanzamos un error claro en lugar de fallar silenciosamente.
+        throw new Error(`La conversión para el tipo de archivo ${fileExt} requiere un microservicio, pero CONVERSION_SERVICE_URL no está configurada.`);
     }
+    
+    console.log(`Delegando la conversión de (${originalFilename}) a ${CONVERSION_SERVICE_URL}...`);
+
+    try {
+        // 1. Crear un formulario de datos para enviar el archivo.
+        // Esto es equivalente a un <form> HTML con un <input type="file">.
+        const formData = new FormData();
+        
+        // 2. Adjuntar el buffer del archivo al formulario.
+        // El primer argumento 'file' es el nombre del campo que el microservicio esperará.
+        // El segundo es el contenido del archivo.
+        // El tercero es el nombre del archivo original.
+        formData.append('file', fileBuffer, originalFilename);
+
+        // 3. Realizar la petición POST al microservicio de conversión.
+        // Se envía el formulario y se especifica que la respuesta esperada es un stream de datos.
+        const response = await axios.post(CONVERSION_SERVICE_URL, formData, {
+            headers: {
+                // Axios y form-data se encargan de establecer el 'Content-Type' a 'multipart/form-data'
+                // y de calcular los boundaries necesarios.
+                ...formData.getHeaders()
+            },
+            // 'arraybuffer' es crucial para recibir el archivo PDF de vuelta como datos binarios.
+            responseType: 'arraybuffer' 
+        });
+
+        // 4. Devolver los datos del PDF convertido.
+        // La respuesta (`response.data`) contendrá el buffer del archivo PDF.
+        // Ahora puedes hacer lo que necesites con él: guardarlo, enviarlo al cliente, etc.
+        console.log(`Conversión exitosa desde el microservicio. Se recibió un PDF de ${response.data.length} bytes.`);
+        
+        // Aquí retornarías el resultado para que el resto de tu aplicación lo procese.
+        // Por ejemplo:
+        // return response.data; 
+
+    } catch (error) {
+        // Manejo de errores mejorado para dar más contexto.
+        console.error("Error al comunicarse con el microservicio de conversión:", error.message);
+        if (error.response) {
+            // El error vino desde el microservicio (ej. error 400, 500).
+            console.error("Respuesta del microservicio:", error.response.status, error.response.data.toString());
+            throw new Error(`El microservicio de conversión falló con el código de estado ${error.response.status}.`);
+        } else if (error.request) {
+            // La petición se hizo pero no se recibió respuesta.
+            throw new Error(`No se recibió respuesta desde el microservicio en ${CONVERSION_SERVICE_URL}.`);
+        } else {
+            // Ocurrió un error al configurar la petición.
+            throw new Error(`Error al configurar la llamada al microservicio: ${error.message}`);
+        }
+    }
+}
     
 
     // CASO 3: PDF (pdf-parse con fallback a Gemini)
@@ -202,7 +249,7 @@ async function extractTextFromFile(file){
         }
     }
     
-    
+
     // CASO 5: IMÁGENES
     else if (['.jpg', '.jpeg', '.png', '.webp'].includes(fileExt) || clientMimeType.startsWith('image/')) {
         console.log(`Procesando (Imagen) con Mistral OCR: ${file.originalname}`);
