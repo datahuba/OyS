@@ -187,7 +187,7 @@ else if (['.pptx','.vsdx','.ppt','.vsd','.doc','.xls'].includes(fileExt)) {
     try {
     // 1. LEER EL ARCHIVO DESDE EL DISCO
     // Esta es la línea que faltaba. Lee el contenido del archivo en un buffer.
-    const fileContentBuffer = await fs.readFile(filePath);
+    const fileContentBuffer = await fs.promises.readFile(filePath);
 
     // 2. Crear un formulario de datos para enviar el archivo.
     const formData = new FormData();
