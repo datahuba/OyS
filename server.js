@@ -227,6 +227,8 @@ app.get('/api/chats', protect, async (req, res) => {
 
 app.get('/api/chats/context/:contextName', protect, async (req, res) => {
     const { contextName } = req.params;
+
+    // A validação continua a ser uma boa prática
     const validContexts = [
         'chat', 'compatibilizacion', 'normativas', 'mof',
         'pyp', 'context6', 'context7', 'context8', 'miscellaneous'
@@ -237,14 +239,19 @@ app.get('/api/chats/context/:contextName', protect, async (req, res) => {
     }
 
     try {
+        // --- ESTA É A LINHA QUE MUDA TUDO ---
+        // A consulta agora é muito mais simples.
         const query = {
             userId: req.user._id,
-            [contextName]: { $exists: true, $ne: [] }
+            activeContext: contextName // Procura chats onde o campo 'activeContext' corresponda ao nome do contexto
         };
-
+        
+        // O resto do código permanece igual
         const chats = await Chat.find(query)
             .select('_id title updatedAt')
             .sort({ updatedAt: -1 });
+
+        console.log(`Buscando chats para el contexto '${contextName}', encontrados: ${chats.length}`);
 
         res.status(200).json(chats);
 
