@@ -225,6 +225,34 @@ app.get('/api/chats', protect, async (req, res) => {
     } catch (error) { res.status(500).json({ message: 'Error al obtener chats', error: error.message }); }
 });
 
+app.get('/api/chats/context/:contextName', protect, async (req, res) => {
+    const { contextName } = req.params;
+    const validContexts = [
+        'chat', 'compatibilizacion', 'normativas', 'mof',
+        'pyp', 'context6', 'context7', 'context8', 'miscellaneous'
+    ];
+
+    if (!validContexts.includes(contextName)) {
+        return res.status(400).json({ message: 'Nombre de contexto inválido.' });
+    }
+
+    try {
+        const query = {
+            userId: req.user._id,
+            [contextName]: { $exists: true, $ne: [] }
+        };
+
+        const chats = await Chat.find(query)
+            .select('_id title updatedAt')
+            .sort({ updatedAt: -1 });
+
+        res.status(200).json(chats);
+
+    } catch (error) {
+        console.error(`Error al obtener chats para el contexto '${contextName}':`, error);
+        res.status(500).json({ message: 'Error del servidor al filtrar los chats.' });
+    }
+});
 
 app.get('/api/chats/:id', protect, async (req, res) => {
 
