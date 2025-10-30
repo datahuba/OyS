@@ -404,7 +404,7 @@ async function processMultipleFilesAndFillForm(files, formType) {
 
     let finalPrompt = promptTemplate.replace('__JSON_SCHEMA__', schemaFileContent);
     finalPrompt = finalPrompt.replace('__TEXT_TO_PROCESS__', combinedText); // Usamos el texto combinado
-    console.log(finalPrompt)
+    
     console.log(`[Multi-File Service] Enviando prompt combinado a la API de OpenAI...`);
     
     const response = await openai.chat.completions.create({
@@ -417,6 +417,7 @@ async function processMultipleFilesAndFillForm(files, formType) {
     const jsonData = JSON.parse(responseText);
     
     console.log(`[Multi-File Service] ¡JSON combinado para ${formType} parseado con éxito!`);
+    console.log(jsonData)
     return jsonData;
 
   } catch (error) {
