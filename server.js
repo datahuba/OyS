@@ -271,12 +271,44 @@ app.get('/api/chats/:id', protect, async (req, res) => {
     } catch (error) { res.status(500).json({ message: 'Error al obtener chat', error: error.message }); }
 });
 
+
+
 app.post('/api/chats', protect, async (req, res) => {
+    // 1. Lee los datos opcionales que envía el frontend
+    const { initialContext, title } = req.body;
+
     try {
-        const newChat = new Chat({ title: 'Nuevo Chat', messages: [], userId: req.user._id });
+        // 2. Actúa como un guardián: si se envía un contexto, lo valida primero.
+        if (initialContext) {
+            const validContexts = Chat.schema.path('activeContext').enumValues;
+            if (!validContexts.includes(initialContext)) {
+                return res.status(400).json({ message: 'El contexto inicial proporcionado es inválido.' });
+            }
+        }
+
+        // 3. Construye dinámicamente los datos del nuevo chat
+        const chatData = {
+            userId: req.user._id
+        };
+
+        if (title && typeof title === 'string' && title.trim()) {
+            chatData.title = title.trim();
+        }
+
+        if (initialContext) {
+            chatData.activeContext = initialContext;
+        }
+
+        // 4. Crea el chat con los datos preparados
+        const newChat = new Chat(chatData);
         await newChat.save();
+
         res.status(201).json(newChat);
-    } catch (error) { res.status(500).json({ message: 'Error al crear chat', error: error.message }); }
+
+    } catch (error) {
+        console.error("Error al crear un nuevo chat:", error);
+        res.status(500).json({ message: 'Error del servidor al crear el chat', error: error.message });
+    }
 });
 
 app.delete('/api/chats/:id', protect, async (req, res) => {
