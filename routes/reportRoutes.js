@@ -169,6 +169,13 @@ const reportConfigs = {
         formMappings: {
             'form1File': 'comp' // El archivo se llama 'compFile', se procesa como 'comp' y su JSON reemplaza __JSON_COMP__
         }
+    },
+    mofRapido: {
+        reportType: 'Mof Rapido',
+        promptEnvVar: 'PROMPT_MOF_RAPIDO', 
+        formMappings: {
+            'form1File': 'mof1' 
+        }
     }
 };
 
@@ -184,5 +191,10 @@ router.post('/generar-comp-administrativa', protect, upload, (req, res) => {
 router.post('/generar-consolidado', protect, upload, (req, res) => {
     handleReportGeneration(req, res, reportConfigs.consolidado);
 });
+
+router.post('/generar-mof-rapido', protect, upload, (req, res) => {
+    handleReportGeneration(req, res, reportConfigs.mofRapido);
+});
+
 
 module.exports = router;
