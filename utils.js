@@ -242,7 +242,7 @@ else if (['.pptx','.vsdx','.ppt','.vsd','.doc','.xls'].includes(fileExt)) {
         } catch (error) {
             console.warn("pdf-parse falló. Usando fallback de Mistral AI...");
             text = await extractTextWithMistral(filePath, clientMimeType);
-            console.log(text);
+            //console.log(text);
             
         }
     }
@@ -344,6 +344,7 @@ async function processAndFillFormWithOpenAI(file, formType) {
     let finalPrompt = promptTemplate.replace('__JSON_SCHEMA__', schemaFileContent);
     finalPrompt = finalPrompt.replace('__TEXT_TO_PROCESS__', textContent);
 
+    console.log(finalPrompt)
     console.log(`[OpenAI Service] Enviando prompt para ${formType} a la API de OpenAI...`);
     
     const response = await openai.chat.completions.create({
@@ -403,7 +404,7 @@ async function processMultipleFilesAndFillForm(files, formType) {
 
     let finalPrompt = promptTemplate.replace('__JSON_SCHEMA__', schemaFileContent);
     finalPrompt = finalPrompt.replace('__TEXT_TO_PROCESS__', combinedText); // Usamos el texto combinado
-
+    console.log(finalPrompt)
     console.log(`[Multi-File Service] Enviando prompt combinado a la API de OpenAI...`);
     
     const response = await openai.chat.completions.create({
