@@ -41,8 +41,8 @@ router.post('/login', async (req, res) => {
         _id: 'superuser_1', // Un ID estático para el superusuario
         name: 'Administrador Principal',
         email: process.env.SUPER_USER1,
-        role: 'admin', // ¡El rol es importante!
-        token: generateToken('superuser_1', 'super_admin'),
+        role: 'superadmin', // ¡El rol es importante!
+        token: generateToken('superuser_1', 'superadmin'),
       });
     }
 
