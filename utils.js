@@ -417,7 +417,7 @@ async function processMultipleFilesAndFillForm(files, formType) {
     const jsonData = JSON.parse(responseText);
     
     console.log(`[Multi-File Service] ¡JSON combinado para ${formType} parseado con éxito!`);
-    console.log(jsonData)
+    //console.log(jsonData)
     return jsonData;
 
   } catch (error) {
