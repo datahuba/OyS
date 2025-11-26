@@ -4,8 +4,8 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { protect } = require('../middleware/authMiddleware'); 
 
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+const generateToken = (id, role) => {
+  return jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: '30d' });
 };
 
 router.post('/register', async (req, res) => {
@@ -31,14 +31,45 @@ router.post('/register', async (req, res) => {
 
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
+
   try {
+    // --- 1. VERIFICACIÓN DE SUPERUSUARIOS PRIMERO ---
+    // Comprueba si las credenciales coinciden con el SuperUsuario 1
+    if (email === process.env.SUPER_USER1 && password === process.env.SUPER_PASSWORD1) {
+      console.log('Login exitoso como Super Usuario 1');
+      return res.json({
+        _id: 'superuser_1', // Un ID estático para el superusuario
+        name: 'Administrador Principal',
+        email: process.env.SUPER_USER1,
+        role: 'admin', // ¡El rol es importante!
+        token: generateToken('superuser_1', 'super_admin'),
+      });
+    }
+
+    // Comprueba si las credenciales coinciden con el SuperUsuario 2
+    if (email === process.env.SUPER_USER2 && password === process.env.SUPER_PASSWORD2) {
+      console.log('Login exitoso como Super Usuario 2');
+      return res.json({
+        _id: 'superuser_2',
+        name: 'Administrador UAGRM',
+        email: process.env.SUPER_USER2,
+        role: 'admin',
+        token: generateToken('superuser_2', 'admin'),
+      });
+    }
+
+    // --- 2. FALLBACK A LA BASE DE DATOS PARA USUARIOS NORMALES ---
+    // Si no es un superusuario, busca en la base de datos
+    console.log('Credenciales no son de superusuario, buscando en la base de datos...');
     const user = await User.findOne({ email }).select('+password');
+
     if (user && (await user.matchPassword(password))) {
       res.json({
         _id: user._id,
         name: user.name,
         email: user.email,
-        token: generateToken(user._id),
+        role: 'user', // Rol de usuario normal
+        token: generateToken(user._id, 'user'),
       });
     } else {
       res.status(401).json({ message: 'Email o contraseña inválidos' });
