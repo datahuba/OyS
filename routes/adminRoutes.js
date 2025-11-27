@@ -128,7 +128,7 @@ router.put('/users/:id', async (req, res) => {
  * @desc    (ELIMINAR) Borrar un usuario por su ID
  * @access  Privado/SuperAdmin (¡Solo el rol más alto puede eliminar!)
  */
-router.delete('/users/:id', isSuperAdmin, async (req, res) => {
+router.delete('/users/:id',  async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
 
@@ -136,7 +136,7 @@ router.delete('/users/:id', isSuperAdmin, async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado.' });
     }
     
-    // Regla de seguridad: Impedir que un superadmin se elimine a sí mismo
+    // Regla de seguridad: Impedir que un admin se elimine a sí mismo
     if (user._id.toString() === req.user._id.toString()) {
         return res.status(400).json({ message: 'No puedes eliminar tu propia cuenta desde el panel de administración.' });
     }
