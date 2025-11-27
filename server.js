@@ -22,6 +22,7 @@ const GlobalDocument = require('./models/GlobalDocuments');
 const app = express();
 const PORT = process.env.PORT || 5000;
 const reportRoutes = require('./routes/reportRoutes'); 
+const adminRoutes = require('./routes/adminRoutes');
 const { extractTextFromFile, processAndFillForm } = require('./utils.js');
 // Middlewares globales
 const allowedOrigins = [
@@ -715,6 +716,8 @@ app.post('/api/extract-json', protect, upload, async (req, res) => {
 
 app.use('/api/users', userRoutes);
 app.use('/api/informes', reportRoutes);
+app.use('/api/admin', adminRoutes);
+
 
 // --- INICIAR SERVIDOR ---
 app.listen(PORT, () => console.log(`Servidor backend corriendo en http://localhost:${PORT}`));
