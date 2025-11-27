@@ -477,14 +477,14 @@ app.post('/api/chat-general', protect, async (req, res) => {
 
         // --- LÓGICA DE CHAT NORMAL CON RAG ---
         // 1. Obtener documentos del chat
-        const documentIds = getDocumentsForActiveContext(currentChat);
+        const chatDocumentIds = getDocumentsForActiveContext(currentChat);
         let allSearchableIds = [...chatDocumentIds];
         // 2. AÑADIR DOCUMENTOS GLOBALES SÓLO SI EL BOOLEANO ES TRUE
         if (useGlobalContext) {
             console.log("[DEBUG] 'useGlobalContext' es true. Buscando documentos globales...");
             const globalDocs = await GlobalDocument.find({});
             const globalDocumentIds = globalDocs.map(doc => doc.documentId);
-            const allSearchableIds = [...new Set([...documentIds, ...globalDocumentIds])];
+            allSearchableIds = [...new Set([...documentIds, ...globalDocumentIds])];
             } 
         else {
             console.log("[DEBUG] 'useGlobalContext' es false. Omitiendo documentos globales.");
