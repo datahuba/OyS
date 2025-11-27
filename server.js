@@ -484,7 +484,7 @@ app.post('/api/chat', protect, async (req, res) => {
             console.log("[DEBUG] 'useGlobalContext' es true. Buscando documentos globales...");
             const globalDocs = await GlobalDocument.find({});
             const globalDocumentIds = globalDocs.map(doc => doc.documentId);
-            allSearchableIds = [...new Set([...documentIds, ...globalDocumentIds])];
+            allSearchableIds = [...new Set([...chatDocumentIds, ...globalDocumentIds])];
             } 
         else {
             console.log("[DEBUG] 'useGlobalContext' es false. Omitiendo documentos globales.");
