@@ -458,8 +458,9 @@ app.post('/api/process-document', protect, upload, async (req, res) => {
 
 
 
-app.post('/api/chat', protect, async (req, res) => {
-    const { conversationHistory, chatId } = req.body;
+app.post('/api/chat-general', protect, async (req, res) => {
+    const { conversationHistory, chatId, useGlobalContext = true } = req.body; 
+
     if (!chatId || !Array.isArray(conversationHistory)) {
         return res.status(400).json({ message: 'Datos inválidos.' });
     }
@@ -472,49 +473,26 @@ app.post('/api/chat', protect, async (req, res) => {
 
         const userQuery = conversationHistory[conversationHistory.length - 1].parts[0].text;
         
-        // --- ¡NUEVO BLOQUE DE CÓDIGO PARA COMANDOS DE DEBUG! ---
-        if (userQuery === process.env.DEBUG_SECRET_ON) {
-            const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
-                debugMode: true,
-                $push: { messages: { sender: 'bot', text: 'Modo DEBUG de JSON activado para este chat.' }}
-            }, { new: true });
-            return res.status(200).json({ updatedChat });
-        }
-        if (userQuery === process.env.DEBUG_SECRET_OFF) {
-            const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
-                debugMode: false,
-                $push: { messages: { sender: 'bot', text: 'Modo DEBUG de JSON desactivado.' }}
-            }, { new: true });
-            return res.status(200).json({ updatedChat });
-        }
-        // --- FIN DEL NUEVO BLOQUE ---
 
-        // --- MANEJO DE COMANDOS DE SUPERUSUARIO ---
-        if (userQuery === process.env.SUPERUSER_SECRET && !currentChat.isSuperuserMode) {
-            const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
-                isSuperuserMode: true,
-                $push: { messages: { sender: 'bot', text: 'Modo Superusuario ACTIVADO.' }}
-            }, { new: true });
-            return res.status(200).json({ updatedChat });
-        }
-        if (userQuery === "exit" && currentChat.isSuperuserMode) {
-            const updatedChat = await Chat.findByIdAndUpdate(chatId, { 
-                isSuperuserMode: false,
-                $push: { messages: { sender: 'bot', text: 'Modo Superusuario DESACTIVADO.' }}
-            }, { new: true });
-            return res.status(200).json({ updatedChat });
-        }
 
         // --- LÓGICA DE CHAT NORMAL CON RAG ---
-        // 1. Obtener documentos relevantes (del chat y globales)
+        // 1. Obtener documentos del chat
         const documentIds = getDocumentsForActiveContext(currentChat);
-        //console.log(`[DEBUG] Documentos del contexto activo ('${currentChat.activeContext}'):`, documentIds);
-        const globalDocs = await GlobalDocument.find({});
-        const globalDocumentIds = globalDocs.map(doc => doc.documentId);
-        //console.log(`[DEBUG] Documentos Globales encontrados en la BD (${globalDocumentIds.length}):`, globalDocumentIds);
-        const allSearchableIds = [...new Set([...documentIds, ...globalDocumentIds])];
-        //console.log(`[DEBUG] Total de IDs únicos para la búsqueda en Pinecone:`, allSearchableIds);
+        let allSearchableIds = [...chatDocumentIds];
+        // 2. AÑADIR DOCUMENTOS GLOBALES SÓLO SI EL BOOLEANO ES TRUE
+        if (useGlobalContext) {
+            console.log("[DEBUG] 'useGlobalContext' es true. Buscando documentos globales...");
+            const globalDocs = await GlobalDocument.find({});
+            const globalDocumentIds = globalDocs.map(doc => doc.documentId);
+            const allSearchableIds = [...new Set([...documentIds, ...globalDocumentIds])];
+            } 
+        else {
+            console.log("[DEBUG] 'useGlobalContext' es false. Omitiendo documentos globales.");
+            }
+        
+        console.log(`[DEBUG] Total de IDs únicos para la búsqueda en Pinecone:`, allSearchableIds);
 
+        
          // Preparamos el historial de conversación original para enviarlo al modelo.
         let contents = conversationHistory.map(msg => ({
             role: msg.role,
