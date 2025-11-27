@@ -458,7 +458,7 @@ app.post('/api/process-document', protect, upload, async (req, res) => {
 
 
 
-app.post('/api/chat-general', protect, async (req, res) => {
+app.post('/api/chat', protect, async (req, res) => {
     const { conversationHistory, chatId, useGlobalContext = true } = req.body; 
 
     if (!chatId || !Array.isArray(conversationHistory)) {
