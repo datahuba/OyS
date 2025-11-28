@@ -8,7 +8,6 @@ const Chat = require('../models/Chat');
 //const { VertexAI } = require('@google-cloud/vertexai');
 const { OpenAI } = require('openai');
 // Importamos las funciones que movimos a utils.js
-const { processAndFillFormWithOpenAI } = require('../utils.js');
 const { processMultipleFilesAndFillForm } = require('../utils.js');
 
 // --- CONFIGURACIÓN DE MULTER ---

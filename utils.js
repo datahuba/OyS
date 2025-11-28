@@ -1,4 +1,5 @@
-//const fs = require('fs/promises');
+// utils.js
+
 const fs = require('fs');
 const path = require('path');
 const mammoth = require("mammoth");
@@ -7,95 +8,108 @@ const pdf = require('pdf-parse');
 const axios = require('axios');
 const FormData = require('form-data');
 const { google } = require('googleapis');
-const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
-
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-const DELAY_MS = 10;
-
 const { Mistral } = require('@mistralai/mistralai');
-// Inicializa el cliente de Mistral una sola vez
-const mistralApiKey = process.env.MISTRAL_API_KEY;
-if (!mistralApiKey) {
-    console.warn("ADVERTENCIA: La variable de entorno MISTRAL_API_KEY no está configurada.");
-}
-const mistralClient = new Mistral({ apiKey: mistralApiKey });
-// INICIALIZACIÓN DEL CLIENTE DE OPENAI 
 const OpenAI = require('openai');
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const mistralClient = new Mistral({ apiKey: process.env.MISTRAL_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let embeddingModel; // Se inicializará la primera vez que se use.
 
-async function getTextViaGoogleDriveConversion(filePath, originalMimeType, originalFilename) {
-    console.log(`[Google Drive] Iniciando conversión para: ${originalFilename}`);
 
-    const GOOGLE_DRIVE_FOLDER_ID = '1f1ShEzlB-fY1_l-0YxWnhdTIWxejOBwP'; 
+function getDocumentsForActiveContext(chat) {
+    const contextKey = chat.activeContext;
+    if (chat[contextKey] && Array.isArray(chat[contextKey])) {
+        return chat[contextKey].map(doc => doc.documentId);
+    }
+    return [];
+}
 
-    // Si usas keyFile: indica la ruta al JSON de la service account.
-    const auth = new google.auth.GoogleAuth({
-        scopes: ['https://www.googleapis.com/auth/drive'],
-        // keyFile: '/path/to/service-account.json', // <- descomenta si usas service account local
-        // clientOptions: { subject: 'user@tu-dominio.com' } // <- si usas domain-wide delegation
-    });
 
-    const drive = google.drive({ version: 'v3', auth });
-
-    let tempFileId = null;
-
+const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, topK = 5) => {
+    if (!documentIds || documentIds.length === 0) return [];
     try {
-        // Subir y pedir conversión a Google Docs
-        const createRes = await drive.files.create({
-            requestBody: {
-                name: `temp_conversion_${Date.now()}_${originalFilename}`,
-                mimeType: 'application/vnd.google-apps.document',
-                parents: [GOOGLE_DRIVE_FOLDER_ID]
-            },
-            media: {
-                mimeType: originalMimeType,
-                body: fs.createReadStream(filePath)
-            },
-            supportsAllDrives: true,
-            fields: 'id'
+        const queryResponse = await pineconeIndex.query({
+            topK,
+            vector: queryEmbedding,
+            filter: { documentId: { "$in": documentIds } },
+            includeMetadata: true,
         });
-
-        tempFileId = createRes.data.id;
-        if (!tempFileId) throw new Error('La subida no devolvió ID de archivo.');
-
-        console.log(`[Google Drive] Archivo convertido con ID temporal: ${tempFileId}`);
-
-        // Exportar a texto plano — usar arraybuffer y convertir a string
-        const exportRes = await drive.files.export({
-            fileId: tempFileId,
-            mimeType: 'text/plain'
-        }, { responseType: 'arraybuffer', supportsAllDrives: true });
-
-        const exportedBuffer = Buffer.from(exportRes.data);
-        const text = exportedBuffer.toString('utf8');
-
-        console.log(`[Google Drive] Extracción de texto completada. ${text.length} bytes.`);
-        return text;
-
-    } catch (error) {
-        // Log más detallado para depurar
-        console.error('[Google Drive] Error durante el proceso de conversión:');
-        console.error('message:', error.message);
-        if (error.code) console.error('code:', error.code);
-        if (error.errors) console.error('errors:', JSON.stringify(error.errors, null, 2));
-        if (error.response && error.response.data) {
-            console.error('response.data:', typeof error.response.data === 'object' ? JSON.stringify(error.response.data, null, 2) : error.response.data);
+        if (queryResponse.matches?.length) {
+            return queryResponse.matches.map(match => match.metadata.chunkText);
         }
-        throw new Error('La conversión con la API de Google Drive falló.');
-    } finally {
-        if (tempFileId) {
-            try {
-                await drive.files.delete({ fileId: tempFileId, supportsAllDrives: true });
-                console.log(`[Google Drive] Archivo temporal ${tempFileId} eliminado.`);
-            } catch (cleanupError) {
-                console.error(`[Google Drive] Fallo al eliminar el archivo temporal ${tempFileId}:`, cleanupError.message);
-                if (cleanupError.response && cleanupError.response.data) console.error(cleanupError.response.data);
-            }
+        return [];
+    } catch (error) {
+        console.error("[Pinecone] Error al realizar la búsqueda:", error);
+        return [];
+    }
+};
+
+// --- FUNCIÓN DE BÚSQUEDA ESPECÍFICA EN EL ÍNDICE DE NORMATIVAS (pineconeIndex2) ---
+const findRelevantChunksInNormativas = async (queryEmbedding, topK = 10) => {
+    try {
+        const queryResponse = await pineconeIndex2.query({
+            topK,
+            vector: queryEmbedding,
+            includeMetadata: true,
+        });
+        if (queryResponse.matches?.length) {
+            return queryResponse.matches.map(match => match.metadata.text);
+        }
+        return [];
+    } catch (error) {
+        console.error("[Pinecone - Normativas] Error al realizar la búsqueda:", error);
+        return [];
+    }
+};
+
+// --- FUNCIÓN getEmbedding (VERSIÓN SIMPLE DE AI STUDIO PARA COMPATIBILIDAD) ---
+const getEmbedding = async (text) => {
+    try {
+        if (!embeddingModel) {
+            const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_API_KEY);
+            embeddingModel = genAI.getGenerativeModel({ model: "embedding-001" });
+        }
+        const result = await embeddingModel.embedContent(text);
+        return result.embedding.values;
+    } catch (error) {
+        console.error("Error al generar embedding:", error);
+        throw new Error("No se pudo generar el embedding.");
+    }
+};
+
+const getVertexEmbedding = async (text) => {
+    try {
+        const result = await vertexEmbeddingModel.embedContent(text);
+        return result.embedding.values;
+    } catch (error) {
+        console.error("Error al generar embedding con AI Studio:", error);
+        throw new Error("No se pudo generar el embedding de compatibilidad.");
+    }
+};
+
+const chunkDocument = (text, chunkSize = 1000, overlap = 200) => { const chunks = []; for (let i = 0; i < text.length; i += chunkSize - overlap) { chunks.push(text.substring(i, i + chunkSize)); } return chunks; };
+
+function chunkTextSmart(text, chunkSize = 1500, chunkOverlap = 150) {
+    const cleanedText = text.replace(/(\r\n|\n|\r)/gm, " ").replace(/\s\s+/g, ' ');
+    const sentences = cleanedText.match(/[^.!?]+[.!?]+/g) || [];
+    if (sentences.length === 0 && cleanedText) return [cleanedText];
+
+    const chunks = [];
+    let currentChunk = "";
+    for (const sentence of sentences) {
+        if (currentChunk.length + sentence.length <= chunkSize) {
+            currentChunk += " " + sentence;
+        } else {
+            chunks.push(currentChunk.trim());
+            const lastWords = currentChunk.substring(currentChunk.length - chunkOverlap);
+            currentChunk = lastWords + " " + sentence;
         }
     }
+    if (currentChunk) chunks.push(currentChunk.trim());
+    return chunks;
 }
+
+
 
 
 async function extractTextWithMistral(filePath, mimetype) {
@@ -269,101 +283,6 @@ else if (['.pptx','.vsdx','.ppt','.vsd','.doc','.xls'].includes(fileExt)) {
     return text;
 };
 
-async function processAndFillForm(file, formType, generativeModel) {
-      console.log(`[JSON Extractor] Iniciando para el formulario tipo: ${formType}`);
-
-  try {
-    const textContent = await extractTextFromFile(file, generativeModel);
-    if (!textContent || !textContent.trim()) {
-      throw new Error("No se pudo extraer contenido del archivo o está vacío.");
-    }
-
-    // Cargar el prompt
-    const promptKey = `PROMPT_${formType.toUpperCase()}`;
-    console.log(promptKey);
-    // Cargar esquema JSON
-    const schemaPath = path.join(__dirname, 'schemas', `${formType}.schema.json`);
-    const [promptTemplate, schemaFileContent] = await Promise.all([process.env[promptKey],fs.promises.readFile(schemaPath, 'utf8')]);
-    console.log(promptTemplate); 
-    if (!promptTemplate) {
-        throw new Error(`El prompt para ${formType} no se encontró en el archivo .env`);
-    }
-
-    // Armar promp con pedazos
-    let finalPrompt = promptTemplate.replace('__JSON_SCHEMA__', schemaFileContent);
-    finalPrompt = finalPrompt.replace('__TEXT_TO_PROCESS__', textContent);
-    
-    // API
-    await delay(DELAY_MS);
-    console.log(`[DELAY] Esperando ${DELAY_MS}ms antes de la llamada de extracción JSON para ${file.originalname}...`);
-    
-    console.log(`[JSON Extractor] Enviando prompt para ${formType} a la API...`);
-    
-    const request = { contents: [{ role: 'user', parts: [{ text: finalPrompt }] }] };
-    const result = await generativeModel.generateContent(request);
-    
-    const responseText = result.response.candidates[0].content.parts[0].text;
-
-    // Limpiar respuesta
-    const cleanedText = responseText.replace(/^```json\n?/, '').replace(/```$/, '');
-    
-    try {
-      const jsonData = JSON.parse(cleanedText);
-      console.log(`[JSON Extractor] ¡JSON para ${formType} parseado con éxito!`);
-      return jsonData;
-    } catch (parseError) {
-      console.error("[JSON Extractor] Error fatal: La respuesta de la IA no es un JSON válido.", parseError);
-      console.log("[JSON Extractor] Respuesta recibida de la IA:", cleanedText);
-      throw new Error("La respuesta de la IA no pudo ser parseada como JSON.");
-    }
-
-  } catch (error) {
-    console.error(`[JSON Extractor] Error durante el procesamiento del ${formType}:`, error.message);
-    throw error; 
-  }
-};
-// processAndFillForm con OPENAI ---
-async function processAndFillFormWithOpenAI(file, formType) {
-  console.log(`[OpenAI Service] Iniciando extracción de JSON para: ${file.originalname}`);
-  try {
-    const textContent = await extractTextFromFile(file);
-    if (!textContent || !textContent.trim()) {
-      throw new Error("No se pudo extraer contenido del archivo.");
-    }
-
-    const promptKey = `PROMPT_${formType.toUpperCase()}`;
-    const schemaPath = path.join(__dirname, 'schemas', `${formType}.schema.json`);
-    const [promptTemplate, schemaFileContent] = await Promise.all([
-        process.env[promptKey],
-        fs.promises.readFile(schemaPath, 'utf8')
-    ]);
-    if (!promptTemplate) {
-        throw new Error(`El prompt para ${formType} no se encontró en el archivo .env`);
-    }
-
-    let finalPrompt = promptTemplate.replace('__JSON_SCHEMA__', schemaFileContent);
-    finalPrompt = finalPrompt.replace('__TEXT_TO_PROCESS__', textContent);
-
-    console.log(finalPrompt)
-    console.log(`[OpenAI Service] Enviando prompt para ${formType} a la API de OpenAI...`);
-    
-    const response = await openai.chat.completions.create({
-        model: "gpt-5-nano", // O "gpt-3.5-turbo" si prefieres
-        messages: [{ role: "user", content: finalPrompt }],
-        response_format: { type: "json_object" }, 
-    });
-
-    const responseText = response.choices[0].message.content;
-
-    const jsonData = JSON.parse(responseText);
-    console.log(`[OpenAI Service] ¡JSON para ${formType} parseado con éxito!`);
-    return jsonData;
-
-  } catch (error) {
-    console.error(`[OpenAI Service] Error durante el procesamiento del ${formType}:`, error.message);
-    throw error; 
-  }
-};
 async function processMultipleFilesAndFillForm(files, formType) {
   console.log(`[Multi-File Service] Iniciando extracción de JSON para ${files.length} archivos (tipo: ${formType}).`);
   
@@ -425,9 +344,40 @@ async function processMultipleFilesAndFillForm(files, formType) {
     throw error; 
   }
 };
+
+async function createVectorsForDocument(file, documentId) {
+    // 1. Usa tu extractor avanzado
+    const text = await extractTextFromFile(file);
+    if (!text || !text.trim()) {
+        console.warn(`No se pudo extraer texto del archivo ${file.originalname}, se omitirá.`);
+        return [];
+    }
+    
+    // 2. Divide el texto usando el método semántico mejorado
+    const chunks = chunkTextSmart(text);
+    console.log(`[Procesador RAG] "${file.originalname}" dividido en ${chunks.length} chunks.`);
+
+    // 3. Genera un embedding para cada chunk y prepara el objeto para Pinecone
+    const vectorsToUpsert = await Promise.all(
+        chunks.map(async (chunk, index) => {
+            const chunkWithContext = `Este texto es del archivo llamado "${file.originalname}". Contenido: ${chunk}`;
+            const embeddingValues = await getEmbedding(chunkWithContext);
+            
+            return {
+                id: `${documentId}_chunk_${index}`,
+                values: embeddingValues,
+                metadata: { 
+                    documentId,
+                    originalName: file.originalname, 
+                    chunkText: chunk // Guardamos el texto limpio para el contexto de la IA
+                },
+            };
+        })
+    );
+    return vectorsToUpsert;
+}
+
 module.exports = {
     extractTextFromFile,
-    processAndFillForm,
-    processAndFillFormWithOpenAI,
     processMultipleFilesAndFillForm,
 };

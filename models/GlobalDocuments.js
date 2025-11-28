@@ -1,10 +1,15 @@
 const mongoose = require('mongoose');
 
-// Este esquema es muy similar al 'documentDetailSchema'
 const globalDocumentSchema = new mongoose.Schema({
-  documentId: { type: String, required: true, unique: true }, // ID que enlaza con Pinecone
+  documentId: { type: String, required: true, unique: true },
   originalName: { type: String, required: true },
-  uploadedBy: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' }, // Para saber qué admin lo subió
+  
+  // --- CAMBIO CLAVE ---
+  // Hacemos que estos campos NO sean obligatorios.
+  cloudinaryUrl: { type: String, required: false },
+  cloudinaryPublicId: { type: String, required: false },
+
+  uploadedBy: { type: mongoose.Schema.Types.ObjectId, required: true, ref: 'User' },
   chunkCount: { type: Number, required: true }
 }, { timestamps: true });
 

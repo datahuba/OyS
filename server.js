@@ -6,7 +6,6 @@ const mongoose = require('mongoose');
 const fs =require('fs');
 const path = require('path');
 const multer = require('multer');
-
 const { VertexAI } = require('@google-cloud/vertexai');
 const { GoogleAuth } = require('google-auth-library');
 const { Pinecone } = require('@pinecone-database/pinecone'); 
@@ -17,13 +16,16 @@ const axios = require('axios');
 const FormData = require('form-data');
 const Chat = require('./models/Chat'); 
 const { protect } = require('./middleware/authMiddleware');
-const userRoutes = require('./routes/userRoutes');
 const GlobalDocument = require('./models/GlobalDocuments');
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+const userRoutes = require('./routes/userRoutes');
 const reportRoutes = require('./routes/reportRoutes'); 
 const adminRoutes = require('./routes/adminRoutes');
-const { extractTextFromFile, processAndFillForm } = require('./utils.js');
+const chatRoutes = require('./routes/chatRoutes');
+const documentRoutes = require('./routes/documentRoutes');
+const { extractTextFromFile} = require('./utils.js');
 // Middlewares globales
 const allowedOrigins = [
   'https://oy-s-frontend-git-master-brandon-gonsales-projects.vercel.app',
@@ -80,7 +82,10 @@ const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
 
 // --- MONTAR RUTAS DE USUARIO ---
 app.use('/api/users', userRoutes);
-
+app.use('/api/chats', chatRoutes);
+app.use('/api/documents', documentRoutes);
+app.use('/api/informes', reportRoutes);
+app.use('/api/admin', adminRoutes);
 // --- LÓGICA DE DETECCIÓN DE CONTEXTO POR EMBEDDINGS ---
 const SIMILARITY_THRESHOLD = 0.9;
 
@@ -160,199 +165,8 @@ const getVertexEmbedding = async (text) => {
 };
 
 const chunkDocument = (text, chunkSize = 1000, overlap = 200) => { const chunks = []; for (let i = 0; i < text.length; i += chunkSize - overlap) { chunks.push(text.substring(i, i + chunkSize)); } return chunks; };
-const cosineSimilarity = (vecA, vecB) => { let dotProduct = 0, magA = 0, magB = 0; for(let i=0;i<vecA.length;i++){ dotProduct += vecA[i]*vecB[i]; magA += vecA[i]*vecA[i]; magB += vecB[i]*vecB[i]; } magA = Math.sqrt(magA); magB = Math.sqrt(magB); if(magA===0||magB===0)return 0; return dotProduct/(magA*magB); };
 
 
-// --- RUTAS DE LA API ---
-app.post('/api/chats/:chatId/context', protect, async (req, res) => {
-    const { chatId } = req.params;
-    const { newContext } = req.body;
-
-    // 1. VALIDACIÓN ROBUSTA (de mi versión)
-    // Lee la lista de contextos válidos directamente desde el modelo de la base de datos.
-    const validContexts = Chat.schema.path('activeContext').enumValues;
-    if (!newContext || !validContexts.includes(newContext)) {
-        return res.status(400).json({ message: 'Contexto inválido o no proporcionado.' });
-    }
-
-    try {
-        const chat = await Chat.findById(chatId);
-        if (!chat) {
-            return res.status(404).json({ message: "Chat no encontrado." });
-        }
-
-        if (chat.activeContext === newContext) {
-            return res.status(200).json({ 
-                message: "El contexto ya era el activo.",
-                updatedChat: chat 
-            });
-        }
-
-        const updatedChat = await Chat.findByIdAndUpdate(chatId, {
-            $set: { activeContext: newContext }
-        }, { new: true });
-
-        res.status(200).json({ updatedChat });
-
-    } catch (error) {
-        console.error("Error al cambiar el contexto explícitamente:", error);
-        res.status(500).json({ message: "Error del servidor al cambiar el contexto." });
-    }
-});
-
-
-
-// --- RUTA DE LA API PARA OBTENER TODOS LOS CONTEXTOS DISPONIBLES ---
-app.get('/api/contexts', (req, res) => {
-    try {
-        // Extraemos solo los nombres de los contextos desde la configuración CONTEXT_TRIGGERS
-        const availableContexts = CONTEXT_TRIGGERS.map(trigger => trigger.contextName);
-
-        // Respondemos con la lista de contextos en formato JSON
-        // Es una buena práctica devolver un objeto en lugar de un array directamente
-        res.status(200).json({ contexts: availableContexts });
-
-    } catch (error) {
-        console.error("Error al obtener la lista de contextos:", error);
-        res.status(500).json({ message: "Error del servidor al recuperar los contextos." });
-    }
-});
-
-
-app.get('/api/chats', protect, async (req, res) => {
-    try {
-        const chats = await Chat.find({ userId: req.user._id }).select('_id title updatedAt').sort({ updatedAt: -1 });
-        res.json(chats);
-    } catch (error) { res.status(500).json({ message: 'Error al obtener chats', error: error.message }); }
-});
-
-app.get('/api/chats/context/:contextName', protect, async (req, res) => {
-    const { contextName } = req.params;
-
-    // A validação continua a ser uma boa prática
-    const validContexts = [
-        'chat', 'compatibilizacion', 'normativas', 'mof',
-        'pyp', 'context6', 'context7', 'context8', 'miscellaneous'
-    ];
-
-    if (!validContexts.includes(contextName)) {
-        return res.status(400).json({ message: 'Nombre de contexto inválido.' });
-    }
-
-    try {
-        // --- ESTA É A LINHA QUE MUDA TUDO ---
-        // A consulta agora é muito mais simples.
-        const query = {
-            userId: req.user._id,
-            activeContext: contextName // Procura chats onde o campo 'activeContext' corresponda ao nome do contexto
-        };
-        
-        // O resto do código permanece igual
-        const chats = await Chat.find(query)
-            .select('_id title updatedAt')
-            .sort({ updatedAt: -1 });
-
-        console.log(`Buscando chats para el contexto '${contextName}', encontrados: ${chats.length}`);
-
-        res.status(200).json(chats);
-
-    } catch (error) {
-        console.error(`Error al obtener chats para el contexto '${contextName}':`, error);
-        res.status(500).json({ message: 'Error del servidor al filtrar los chats.' });
-    }
-});
-
-app.get('/api/chats/:id', protect, async (req, res) => {
-
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'ID de chat inválido' });
-    try {
-        const chat = await Chat.findOne({ _id: req.params.id, userId: req.user._id });
-        if (!chat) return res.status(404).json({ message: 'Chat no encontrado o no autorizado' });
-        res.json(chat);
-    } catch (error) { res.status(500).json({ message: 'Error al obtener chat', error: error.message }); }
-});
-
-
-
-app.post('/api/chats', protect, async (req, res) => {
-    // 1. Lee los datos opcionales que envía el frontend
-    const { initialContext, title } = req.body;
-
-    try {
-        // 2. Actúa como un guardián: si se envía un contexto, lo valida primero.
-        if (initialContext) {
-            const validContexts = Chat.schema.path('activeContext').enumValues;
-            if (!validContexts.includes(initialContext)) {
-                return res.status(400).json({ message: 'El contexto inicial proporcionado es inválido.' });
-            }
-        }
-
-        // 3. Construye dinámicamente los datos del nuevo chat
-        const chatData = {
-            userId: req.user._id
-        };
-
-        if (title && typeof title === 'string' && title.trim()) {
-            chatData.title = title.trim();
-        }
-
-        if (initialContext) {
-            chatData.activeContext = initialContext;
-        }
-
-        // 4. Crea el chat con los datos preparados
-        const newChat = new Chat(chatData);
-        await newChat.save();
-
-        res.status(201).json(newChat);
-
-    } catch (error) {
-        console.error("Error al crear un nuevo chat:", error);
-        res.status(500).json({ message: 'Error del servidor al crear el chat', error: error.message });
-    }
-});
-
-app.delete('/api/chats/:id', protect, async (req, res) => {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'ID de chat inválido' });
-    try {
-        const chat = await Chat.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
-        if (!chat) return res.status(404).json({ message: "Chat no encontrado o no autorizado" });
-        res.json({ message: 'Chat eliminado exitosamente' });
-    } catch (error) { res.status(500).json({ message: "Error interno al eliminar el chat." }); }
-});
-
-app.put('/api/chats/:id/title', protect, async (req, res) => { // <-- El parámetro se llama ':id'
-    // --- CAMBIO 1: Usa 'id' en lugar de 'chatId' ---
-    const { id } = req.params; 
-    const { newTitle } = req.body;
-
-    if (!newTitle || typeof newTitle !== 'string' || newTitle.trim().length === 0) {
-        return res.status(400).json({ message: 'Se requiere un nuevo título válido.' });
-    }
-
-    // --- CAMBIO 2: Valida 'id' ---
-    if (!mongoose.Types.ObjectId.isValid(id)) { 
-        return res.status(400).json({ message: 'ID de chat inválido.' });
-    }
-
-    try {
-        // --- CAMBIO 3: Busca usando 'id' ---
-        const chat = await Chat.findOne({ _id: id, userId: req.user._id }); 
-
-        if (!chat) {
-            return res.status(404).json({ message: 'Chat no encontrado o no autorizado.' });
-        }
-
-        chat.title = newTitle.trim();
-        await chat.save();
-
-        res.status(200).json({ message: 'Título actualizado exitosamente.', updatedChat: chat });
-
-    } catch (error) {
-        console.error("Error al actualizar el título del chat:", error);
-        res.status(500).json({ message: "Error del servidor al actualizar el título." });
-    }
-});
 
 app.post('/api/process-document', protect, upload, async (req, res) => {
     const { chatId, documentType } = req.body;
@@ -361,15 +175,7 @@ app.post('/api/process-document', protect, upload, async (req, res) => {
         return res.status(400).json({ message: 'Faltan archivos, ID del chat o tipo de documento.' });
     }
     
-    const allowedTypes = [
-    'miscellaneous',
-    'chat',
-    'compatibilizacionFacultades', 
-    'consolidadoFacultades', 
-    'compatibilizacionAdministrativo', 
-    'consolidadoAdministrativo',
-    'miscellaneous'
-    ];
+    const allowedTypes = ['miscellaneous','chat','compatibilizacionFacultades','consolidadoFacultades','compatibilizacionAdministrativo','consolidadoAdministrativo','miscellaneous'];
 
     if (!allowedTypes.includes(documentType)) {
         return res.status(400).json({ message: 'Tipo de documento inválido.' });
@@ -406,36 +212,18 @@ app.post('/api/process-document', protect, upload, async (req, res) => {
             await pineconeIndex.upsert(vectorsToUpsert);
             console.log(`[Pinecone] Guardados ${vectorsToUpsert.length} chunks para ${file.originalname}.`);
 
-            // --- 2. LÓGICA DE GUARDADO INTELIGENTE (LA MODIFICACIÓN PRINCIPAL) ---
-            if (currentChat.isSuperuserMode) {
-                // MODO SUPERUSUARIO: Guardamos en la colección global
-                console.log(`Modo Superusuario: Guardando ${file.originalname} en la base de conocimiento global.`);
-                await GlobalDocument.create({
-                    documentId,
-                    originalName: file.originalname,
-                    chunkCount: chunks.length,
-                    uploadedBy: req.user._id // Guardamos qué admin subió el archivo
-                });
-                
-                // (Opcional) Podemos añadir un mensaje de confirmación al chat actual
-                await Chat.findByIdAndUpdate(chatId, {
-                    $push: { messages: { sender: 'bot', text: `Archivo "${file.originalname}" añadido a la base de conocimiento GLOBAL.` }}
-                });
+        // --- 2. LÓGICA DE GUARDADO SIMPLIFICADA ---
+        console.log(`Guardando ${file.originalname} en el contexto '${documentType}' del chat.`);
 
-            } else {
-                // MODO NORMAL: Guardamos en el chat actual, como antes
-                console.log(`Modo Normal: Guardando ${file.originalname} en el contexto '${documentType}' del chat.`);
-                const newDocumentData = { documentId, originalName: file.originalname, chunkCount: chunks.length };
-                const systemMessage = { sender: 'bot', text: `Archivo "${file.originalname}" procesado y añadido a '${documentType}'.` };
-                
-                await Chat.findByIdAndUpdate(chatId, {
-                    $push: { 
-                        [documentType]: newDocumentData,
-                        messages: systemMessage
-                    }
-                }, { runValidators: true });
+        const newDocumentData = { documentId, originalName: file.originalname, chunkCount: chunks.length };
+        const systemMessage = { sender: 'bot', text: `Archivo "${file.originalname}" procesado y añadido a '${documentType}'.` };
+
+        await Chat.findByIdAndUpdate(chatId, {
+            $push: { 
+                [documentType]: newDocumentData,
+                messages: systemMessage
             }
-        }
+        });   } 
         
         // --- 3. RESPUESTA AL FRONTEND ---
         // Después de procesar todos los archivos, buscamos el estado final del chat y lo devolvemos
@@ -626,76 +414,6 @@ app.post('/api/chat-normativas', protect, async (req, res) => {
         res.status(500).json({ message: "Error inesperado en el servidor." });
     }
 });
-
-app.post('/api/extract-json', protect, upload, async (req, res) => {
-    // 1. Obtenemos los datos del body, como los envía el frontend
-    const { formType, chatId } = req.body;
-
-    // --- Validaciones (igual que antes) ---
-    if (!mongoose.Types.ObjectId.isValid(chatId)) {
-        return res.status(400).json({ message: 'ID de Chat inválido.' });
-    }
-    // ... resto de tus validaciones ...
-    if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ message: 'No se han subido archivos.' });
-    }
-     if (req.files.length > 1) {
-        return res.status(400).json({ message: 'Por favor, sube solo un archivo a la vez.' });
-    }
-    if (!formType || !['form1', 'form2', 'form3'].includes(formType)) {
-        return res.status(400).json({ message: 'Tipo de formulario inválido.' });
-    }
-
-    const file = req.files[0];
-
-    try {
-        console.log(`[API] Extrayendo JSON de ${file.originalname} para el Chat ID: ${chatId}`);
-        
-        // 1. Extraemos el JSON (esto no cambia)
-        const filledJson = await processAndFillForm(file, formType, generativeModel);
-
-        // 2. Lógica de Guardado en MongoDB
-        // Creamos el nombre del campo dinámicamente (ej. 'formulario1Data')
-        const updateField = `formulario${formType.slice(-1)}Data`; 
-
-        const updatedChat = await Chat.findByIdAndUpdate(
-            chatId,
-            {
-                // Usamos $set para establecer o reemplazar el contenido del campo
-                $set: { [updateField]: filledJson }, 
-                // También añadimos un mensaje de confirmación al chat
-                $push: {
-                    messages: {
-                        sender: 'bot',
-                        text: `Datos de "${file.originalname}" (${formType}) procesados y guardados en la base de datos.`
-                    }
-                }
-            },
-            { new: true } // Para que nos devuelva el documento ya actualizado
-        );
-
-        if (!updatedChat) {
-            return res.status(404).json({ message: "No se encontró el Chat para actualizar." });
-        }
-
-        // 3. Devolvemos la respuesta que el frontend espera
-        res.status(200).json({ updatedChat: updatedChat });
-
-    } catch (error) {
-        console.error(`[API] Error en la ruta /api/extract-json:`, error);
-        res.status(500).json({ message: 'Error en el servidor durante la extracción del JSON.', error: error.message });
-    } finally {
-        // El 'finally' se mantiene para borrar el archivo temporal de /uploads
-        if (fs.existsSync(file.path)) {
-            fs.unlinkSync(file.path);
-        }
-    }
-});
-
-app.use('/api/users', userRoutes);
-app.use('/api/informes', reportRoutes);
-app.use('/api/admin', adminRoutes);
-
 
 // --- INICIAR SERVIDOR ---
 app.listen(PORT, () => console.log(`Servidor backend corriendo en http://localhost:${PORT}`));
