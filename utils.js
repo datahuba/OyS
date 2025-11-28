@@ -380,4 +380,5 @@ async function createVectorsForDocument(file, documentId) {
 module.exports = {
     extractTextFromFile,
     processMultipleFilesAndFillForm,
+    createVectorsForDocument
 };
