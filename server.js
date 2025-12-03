@@ -1,3 +1,4 @@
+//server.js
 require('dotenv').config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const express = require('express');
@@ -25,7 +26,7 @@ const reportRoutes = require('./routes/reportRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const documentRoutes = require('./routes/documentRoutes');
-const { extractTextFromFile} = require('./utils.js');
+const { createVectorsForDocument, getEmbedding } = require('./utils.js');
 // Middlewares globales
 const allowedOrigins = [
   'https://oy-s-frontend-git-master-brandon-gonsales-projects.vercel.app',
@@ -92,81 +93,6 @@ const SIMILARITY_THRESHOLD = 0.9;
 
 
 const upload = multer({ dest: 'uploads/' }).array('files', 10);
-
-// --- SUBPROCESOS Y FUNCIONES AUXILIARES ---
-
-
-
-function getDocumentsForActiveContext(chat) {
-    const contextKey = chat.activeContext;
-    if (chat[contextKey] && Array.isArray(chat[contextKey])) {
-        return chat[contextKey].map(doc => doc.documentId);
-    }
-    return [];
-}
-
-
-const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, topK = 5) => {
-    if (!documentIds || documentIds.length === 0) return [];
-    try {
-        const queryResponse = await pineconeIndex.query({
-            topK,
-            vector: queryEmbedding,
-            filter: { documentId: { "$in": documentIds } },
-            includeMetadata: true,
-        });
-        if (queryResponse.matches?.length) {
-            return queryResponse.matches.map(match => match.metadata.chunkText);
-        }
-        return [];
-    } catch (error) {
-        console.error("[Pinecone] Error al realizar la búsqueda:", error);
-        return [];
-    }
-};
-
-// --- FUNCIÓN DE BÚSQUEDA ESPECÍFICA EN EL ÍNDICE DE NORMATIVAS (pineconeIndex2) ---
-const findRelevantChunksInNormativas = async (queryEmbedding, topK = 10) => {
-    try {
-        const queryResponse = await pineconeIndex2.query({
-            topK,
-            vector: queryEmbedding,
-            includeMetadata: true,
-        });
-        if (queryResponse.matches?.length) {
-            return queryResponse.matches.map(match => match.metadata.text);
-        }
-        return [];
-    } catch (error) {
-        console.error("[Pinecone - Normativas] Error al realizar la búsqueda:", error);
-        return [];
-    }
-};
-
-// --- FUNCIÓN getEmbedding (VERSIÓN SIMPLE DE AI STUDIO PARA COMPATIBILIDAD) ---
-const getEmbedding = async (text) => {
-    try {
-        const result = await embeddingModel.embedContent(text);
-        return result.embedding.values;
-    } catch (error) {
-        console.error("Error al generar embedding con AI Studio:", error);
-        throw new Error("No se pudo generar el embedding de compatibilidad.");
-    }
-};
-
-const getVertexEmbedding = async (text) => {
-    try {
-        const result = await vertexEmbeddingModel.embedContent(text);
-        return result.embedding.values;
-    } catch (error) {
-        console.error("Error al generar embedding con AI Studio:", error);
-        throw new Error("No se pudo generar el embedding de compatibilidad.");
-    }
-};
-
-const chunkDocument = (text, chunkSize = 1000, overlap = 200) => { const chunks = []; for (let i = 0; i < text.length; i += chunkSize - overlap) { chunks.push(text.substring(i, i + chunkSize)); } return chunks; };
-
-
 
 app.post('/api/process-document', protect, upload, async (req, res) => {
     const { chatId, documentType } = req.body;
@@ -246,7 +172,7 @@ app.post('/api/process-document', protect, upload, async (req, res) => {
 
 
 
-app.post('/api/chat', protect, async (req, res) => {
+app.post('/api/chat-general', protect, async (req, res) => {
     const { conversationHistory, chatId, useGlobalContext = true } = req.body; 
 
     if (!chatId || !Array.isArray(conversationHistory)) {
@@ -414,6 +340,63 @@ app.post('/api/chat-normativas', protect, async (req, res) => {
         res.status(500).json({ message: "Error inesperado en el servidor." });
     }
 });
+
+
+function getDocumentsForActiveContext(chat) {
+    const contextKey = chat.activeContext;
+    if (chat[contextKey] && Array.isArray(chat[contextKey])) {
+        return chat[contextKey].map(doc => doc.documentId);
+    }
+    return [];
+}
+
+
+const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, topK = 5) => {
+    if (!documentIds || documentIds.length === 0) return [];
+    try {
+        const queryResponse = await pineconeIndex.query({
+            topK,
+            vector: queryEmbedding,
+            filter: { documentId: { "$in": documentIds } },
+            includeMetadata: true,
+        });
+        if (queryResponse.matches?.length) {
+            return queryResponse.matches.map(match => match.metadata.chunkText);
+        }
+        return [];
+    } catch (error) {
+        console.error("[Pinecone] Error al realizar la búsqueda:", error);
+        return [];
+    }
+};
+
+// --- FUNCIÓN DE BÚSQUEDA ESPECÍFICA EN EL ÍNDICE DE NORMATIVAS (pineconeIndex2) ---
+const findRelevantChunksInNormativas = async (queryEmbedding, topK = 10) => {
+    try {
+        const queryResponse = await pineconeIndex2.query({
+            topK,
+            vector: queryEmbedding,
+            includeMetadata: true,
+        });
+        if (queryResponse.matches?.length) {
+            return queryResponse.matches.map(match => match.metadata.text);
+        }
+        return [];
+    } catch (error) {
+        console.error("[Pinecone - Normativas] Error al realizar la búsqueda:", error);
+        return [];
+    }
+};
+
+const getVertexEmbedding = async (text) => {
+    try {
+        const result = await vertexEmbeddingModel.embedContent(text);
+        return result.embedding.values;
+    } catch (error) {
+        console.error("Error al generar embedding con AI Studio:", error);
+        throw new Error("No se pudo generar el embedding de compatibilidad.");
+    }
+};
 
 // --- INICIAR SERVIDOR ---
 app.listen(PORT, () => console.log(`Servidor backend corriendo en http://localhost:${PORT}`));

@@ -9,7 +9,7 @@ const { protect } = require('../middleware/authMiddleware');
 // --- RUTAS DEL CRUD DE CHATS ---
 
     // GET /api/chats - Listar todos los chats del usuario
-    app.get('/api/chats', protect, async (req, res) => {
+    router.get('/', protect, async (req, res) => {
         try {
             const chats = await Chat.find({ userId: req.user._id }).select('_id title updatedAt').sort({ updatedAt: -1 });
             res.json(chats);
@@ -17,7 +17,7 @@ const { protect } = require('../middleware/authMiddleware');
     });
 
     // POST /api/chats - Crear un nuevo chat
-    app.post('/api/chats', protect, async (req, res) => {
+    router.post('/', protect, async (req, res) => {
         // 1. Lee los datos opcionales que envía el frontend
         const { initialContext, title } = req.body;
     
@@ -56,7 +56,7 @@ const { protect } = require('../middleware/authMiddleware');
     });
     
     // GET /api/chats/:id - Obtener un chat específico
-    app.get('/api/chats/:id', protect, async (req, res) => {
+    router.get('/:id', protect, async (req, res) => {
     
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'ID de chat inválido' });
         try {
@@ -67,7 +67,7 @@ const { protect } = require('../middleware/authMiddleware');
     });
 
     // DELETE /api/chats/:id - Eliminar un chat
-    app.delete('/api/chats/:id', protect, async (req, res) => {
+    router.delete('/:id', protect, async (req, res) => {
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'ID de chat inválido' });
         try {
             const chat = await Chat.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
@@ -77,7 +77,7 @@ const { protect } = require('../middleware/authMiddleware');
     });
 
     // PUT /api/chats/:id/title - Cambiar el título de un chat
-    app.put('/api/chats/:id/title', protect, async (req, res) => { // <-- El parámetro se llama ':id'
+    router.put('/:id/title', protect, async (req, res) => { // <-- El parámetro se llama ':id'
         // --- CAMBIO 1: Usa 'id' en lugar de 'chatId' ---
         const { id } = req.params; 
         const { newTitle } = req.body;
@@ -110,7 +110,7 @@ const { protect } = require('../middleware/authMiddleware');
         }
     });
     // POST /api/chats/:chatId/context - Cambiar el contexto activo
-    app.post('/api/chats/:chatId/context', protect, async (req, res) => {
+    router.post('/:chatId/context', protect, async (req, res) => {
         const { chatId } = req.params;
         const { newContext } = req.body;
     
@@ -147,7 +147,7 @@ const { protect } = require('../middleware/authMiddleware');
     });
 
     // GET /api/chats/context/:contextName - Listar chats por contexto
-    app.get('/api/chats/context/:contextName', protect, async (req, res) => {
+    router.get('/context/:contextName', protect, async (req, res) => {
         const { contextName } = req.params;
     
         // A validação continua a ser uma boa prática
@@ -184,7 +184,7 @@ const { protect } = require('../middleware/authMiddleware');
     });
     
     // --- RUTA DE LA API PARA OBTENER TODOS LOS CONTEXTOS DISPONIBLES ---
-    app.get('/api/contexts', (req, res) => {
+    router.get('/contexts', (req, res) => {
         try {
             // Extraemos solo los nombres de los contextos desde la configuración CONTEXT_TRIGGERS
             const availableContexts = CONTEXT_TRIGGERS.map(trigger => trigger.contextName);

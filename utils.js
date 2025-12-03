@@ -16,51 +16,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 let embeddingModel; // Se inicializará la primera vez que se use.
 
 
-function getDocumentsForActiveContext(chat) {
-    const contextKey = chat.activeContext;
-    if (chat[contextKey] && Array.isArray(chat[contextKey])) {
-        return chat[contextKey].map(doc => doc.documentId);
-    }
-    return [];
-}
 
-
-const findRelevantChunksAcrossDocuments = async (queryEmbedding, documentIds, topK = 5) => {
-    if (!documentIds || documentIds.length === 0) return [];
-    try {
-        const queryResponse = await pineconeIndex.query({
-            topK,
-            vector: queryEmbedding,
-            filter: { documentId: { "$in": documentIds } },
-            includeMetadata: true,
-        });
-        if (queryResponse.matches?.length) {
-            return queryResponse.matches.map(match => match.metadata.chunkText);
-        }
-        return [];
-    } catch (error) {
-        console.error("[Pinecone] Error al realizar la búsqueda:", error);
-        return [];
-    }
-};
-
-// --- FUNCIÓN DE BÚSQUEDA ESPECÍFICA EN EL ÍNDICE DE NORMATIVAS (pineconeIndex2) ---
-const findRelevantChunksInNormativas = async (queryEmbedding, topK = 10) => {
-    try {
-        const queryResponse = await pineconeIndex2.query({
-            topK,
-            vector: queryEmbedding,
-            includeMetadata: true,
-        });
-        if (queryResponse.matches?.length) {
-            return queryResponse.matches.map(match => match.metadata.text);
-        }
-        return [];
-    } catch (error) {
-        console.error("[Pinecone - Normativas] Error al realizar la búsqueda:", error);
-        return [];
-    }
-};
 
 // --- FUNCIÓN getEmbedding (VERSIÓN SIMPLE DE AI STUDIO PARA COMPATIBILIDAD) ---
 const getEmbedding = async (text) => {
@@ -77,15 +33,7 @@ const getEmbedding = async (text) => {
     }
 };
 
-const getVertexEmbedding = async (text) => {
-    try {
-        const result = await vertexEmbeddingModel.embedContent(text);
-        return result.embedding.values;
-    } catch (error) {
-        console.error("Error al generar embedding con AI Studio:", error);
-        throw new Error("No se pudo generar el embedding de compatibilidad.");
-    }
-};
+
 
 const chunkDocument = (text, chunkSize = 1000, overlap = 200) => { const chunks = []; for (let i = 0; i < text.length; i += chunkSize - overlap) { chunks.push(text.substring(i, i + chunkSize)); } return chunks; };
 
@@ -378,7 +326,8 @@ async function createVectorsForDocument(file, documentId) {
 }
 
 module.exports = {
+    createVectorsForDocument,
+    getEmbedding,
     extractTextFromFile,
     processMultipleFilesAndFillForm,
-    createVectorsForDocument
 };
