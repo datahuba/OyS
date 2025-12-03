@@ -16,7 +16,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 let embeddingModel; // Se inicializará la primera vez que se use.
 
 
-
+const DELAY_MS = 100;
 
 // --- FUNCIÓN getEmbedding (VERSIÓN SIMPLE DE AI STUDIO PARA COMPATIBILIDAD) ---
 const getEmbedding = async (text) => {
