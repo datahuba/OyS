@@ -3,20 +3,20 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const fs = require('fs');
 const cloudinary = require('../config/cloudinary');
 const GlobalDocument = require('../models/GlobalDocuments');
 const { protect, isAdmin } = require('../middleware/authMiddleware');
-const { extractTextFromFile, chunkDocument, getEmbedding } = require('../utils.js'); // Usar las mismas funciones que en server.js
+const { extractTextFromFile, chunkDocument, getEmbedding } = require('../utils.js');
 const { Pinecone } = require('@pinecone-database/pinecone');
 
-// Inicializar Pinecone (solo para este contexto)
+// Inicializar Pinecone
 const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
 const pineconeIndex = pinecone.index('chat-rag');
 
-// Usar almacenamiento en memoria para pasar los archivos directamente a Cloudinary
-// Aumentamos el límite a 50 MB para documentos grandes
-const upload = multer({
-    storage: multer.memoryStorage(),
+// Guardar archivos temporalmente en disco (igual que en server.js) para que extractTextFromFile funcione
+const upload = multer({ 
+    dest: 'uploads/',
     limits: {
         fileSize: 50 * 1024 * 1024 // 50 MB en bytes
     }
@@ -27,15 +27,15 @@ router.post('/upload', protect, isAdmin, upload.array('documents'), async (req, 
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ message: 'No se han proporcionado archivos.' });
     }
-
+    
     const results = [];
     const errors = [];
-
+    
     try {
         for (const file of req.files) {
             try {
                 console.log(`[Global Docs] Procesando: ${file.originalname} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-
+                
                 // PASO 1: Extraer texto del archivo (igual que en server.js)
                 const text = await extractTextFromFile(file);
                 if (!text || !text.trim()) {
@@ -44,13 +44,13 @@ router.post('/upload', protect, isAdmin, upload.array('documents'), async (req, 
                     continue;
                 }
                 console.log(`[Global Docs] ✓ Texto extraído: ${text.length} caracteres`);
-
+                
                 // PASO 2: Dividir en chunks (igual que en server.js)
                 const sanitizedFilename = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
                 const documentId = `global_${Date.now()}_${sanitizedFilename}`;
                 const chunks = chunkDocument(text);
                 console.log(`[Global Docs] ✓ ${chunks.length} chunks creados`);
-
+                
                 // PASO 3: Crear vectores (igual que en server.js)
                 const vectorsToUpsert = await Promise.all(
                     chunks.map(async (chunk, index) => ({
@@ -60,24 +60,25 @@ router.post('/upload', protect, isAdmin, upload.array('documents'), async (req, 
                     }))
                 );
                 console.log(`[Global Docs] ✓ ${vectorsToUpsert.length} vectores generados`);
-
-                // PASO 4: Subir a Cloudinary
+                
+                // PASO 4:Subir a Cloudinary (leer desde file.path en disco)
+                const fileBuffer = fs.readFileSync(file.path);
                 const uploadResult = await new Promise((resolve, reject) => {
-                    const uploadStream = cloudinary.uploader.upload_stream({
-                        resource_type: "raw",
-                        folder: "global_documents"
+                    const uploadStream = cloudinary.uploader.upload_stream({ 
+                        resource_type: "raw", 
+                        folder: "global_documents" 
                     }, (error, result) => {
                         if (error) return reject(error);
                         resolve(result);
                     });
-                    uploadStream.end(file.buffer);
+                    uploadStream.end(fileBuffer);
                 });
                 console.log(`[Global Docs] ✓ Subido a Cloudinary`);
 
                 // PASO 5: Guardar en Pinecone
                 await pineconeIndex.upsert(vectorsToUpsert);
                 console.log(`[Global Docs] ✓ Guardado en Pinecone`);
-
+                
                 // PASO 6: Guardar en MongoDB
                 await GlobalDocument.create({
                     documentId,
@@ -88,42 +89,49 @@ router.post('/upload', protect, isAdmin, upload.array('documents'), async (req, 
                     uploadedBy: req.user._id
                 });
                 console.log(`[Global Docs] ✓ Guardado en MongoDB`);
-
-                results.push({
-                    filename: file.originalname,
+                
+                // PASO 7: Limpiar archivo temporal
+                fs.unlinkSync(file.path);
+                
+                results.push({ 
+                    filename: file.originalname, 
                     status: 'success',
-                    chunks: vectorsToUpsert.length
+                    chunks: vectorsToUpsert.length 
                 });
                 console.log(`[Global Docs] ✅ ${file.originalname} procesado completamente`);
-
+                
             } catch (fileError) {
                 console.error(`[Global Docs] ❌ Error en ${file.originalname}:`, fileError.message);
-                errors.push({
-                    filename: file.originalname,
-                    error: fileError.message
+                // Limpiar archivo temporal si existe
+                if (file.path && fs.existsSync(file.path)) {
+                    fs.unlinkSync(file.path);
+                }
+                errors.push({ 
+                    filename: file.originalname, 
+                    error: fileError.message 
                 });
             }
         }
-
+        
         // Responder con el resumen de resultados
         if (results.length > 0 && errors.length === 0) {
-            res.status(201).json({
-                message: 'Todos los archivos fueron procesados exitosamente.',
-                results
+            res.status(201).json({ 
+                message: 'Todos los archivos fueron procesados exitosamente.', 
+                results 
             });
         } else if (results.length > 0 && errors.length > 0) {
-            res.status(207).json({
-                message: `${results.length} archivo(s) procesado(s), ${errors.length} con errores.`,
-                results,
-                errors
+            res.status(207).json({ 
+                message: `${results.length} archivo(s) procesado(s), ${errors.length} con errores.`, 
+                results, 
+                errors 
             });
         } else {
-            res.status(400).json({
-                message: 'No se pudo procesar ningún archivo.',
-                errors
+            res.status(400).json({ 
+                message: 'No se pudo procesar ningún archivo.', 
+                errors 
             });
         }
-
+        
     } catch (error) {
         console.error('[CRUD Admin] Error general:', error);
         res.status(500).json({ message: 'Error en el servidor al subir archivos.', details: error.message });
@@ -145,7 +153,7 @@ router.delete('/:id', protect, isAdmin, async (req, res) => {
     try {
         const docToDelete = await GlobalDocument.findById(req.params.id);
         if (!docToDelete) return res.status(404).json({ message: 'Documento no encontrado.' });
-
+        
         await pineconeIndex.deleteMany({ documentId: docToDelete.documentId });
         if (docToDelete.cloudinaryPublicId) {
             await cloudinary.uploader.destroy(docToDelete.cloudinaryPublicId, { resource_type: "raw" });
