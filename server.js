@@ -4,47 +4,47 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-const fs =require('fs');
+const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const { VertexAI } = require('@google-cloud/vertexai');
 const { GoogleAuth } = require('google-auth-library');
-const { Pinecone } = require('@pinecone-database/pinecone'); 
+const { Pinecone } = require('@pinecone-database/pinecone');
 const mammoth = require("mammoth");
 const xlsx = require('xlsx');
 const pdf = require('pdf-parse');
 const axios = require('axios');
 const FormData = require('form-data');
-const Chat = require('./models/Chat'); 
+const Chat = require('./models/Chat');
 const { protect } = require('./middleware/authMiddleware');
 const GlobalDocument = require('./models/GlobalDocuments');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 const userRoutes = require('./routes/userRoutes');
-const reportRoutes = require('./routes/reportRoutes'); 
+const reportRoutes = require('./routes/reportRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const documentRoutes = require('./routes/documentRoutes');
-const { createVectorsForDocument, getEmbedding } = require('./utils.js');
+const { createVectorsForDocument, getEmbedding, extractTextFromFile, chunkDocument } = require('./utils.js');
 // Middlewares globales
 const allowedOrigins = [
-  'https://oy-s-frontend-git-master-brandon-gonsales-projects.vercel.app',
-  'https://oy-s-frontend-git-develop-brandon-gonsales-projects.vercel.app',               
-  'http://localhost:3000',
-  'http://localhost:3001',
-  "https://oy-s-frontend.vercel.app"
+    'https://oy-s-frontend-git-master-brandon-gonsales-projects.vercel.app',
+    'https://oy-s-frontend-git-develop-brandon-gonsales-projects.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    "https://oy-s-frontend.vercel.app"
 ];
 
 const corsOptions = {
-  origin: function (origin, callback) {
-    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
-      callback(null, true);
-    } else {
-      callback(new Error('No permitido por la política de CORS'));
-    }
-  },
-  credentials: true
+    origin: function (origin, callback) {
+        if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+            callback(null, true);
+        } else {
+            callback(new Error('No permitido por la política de CORS'));
+        }
+    },
+    credentials: true
 };
 
 app.use(cors(corsOptions));
@@ -53,14 +53,14 @@ app.use(express.urlencoded({ extended: true }));
 
 // Conexión a la Base de Datos
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB conectado exitosamente.'))
-  .catch(err => console.error('Error al conectar a MongoDB:', err));
+    .then(() => console.log('MongoDB conectado exitosamente.'))
+    .catch(err => console.error('Error al conectar a MongoDB:', err));
 
 // --- INICIALIZACIÓN DE SERVICIOS DE IA Y DBs ---
 const vertexAI = new VertexAI({ location: 'us-central1' });
 //const vertexEmbeddingModel = vertexAI.getGenerativeModel({ model: "gemini-embedding-001" });
 // Modelos de Google AI
-const generativeModel = vertexAI.getGenerativeModel({model: 'gemini-2.5-pro',});
+const generativeModel = vertexAI.getGenerativeModel({ model: 'gemini-2.5-pro', });
 
 //const embeddingModel = vertexAI.getGenerativeModel({model: "embedding-001",});
 
@@ -71,12 +71,12 @@ const vertexEmbeddingModel = genAI_for_embeddings.getGenerativeModel({ model: "g
 
 
 // Inicializar Pinecone UNO
-const pinecone = new Pinecone({apiKey: process.env.PINECONE_API_KEY,});
-const pineconeIndex = pinecone.index('chat-rag'); 
+const pinecone = new Pinecone({ apiKey: process.env.PINECONE_API_KEY, });
+const pineconeIndex = pinecone.index('chat-rag');
 console.log("Conectado y listo para usar el índice de Pinecone: 'chat-rag'.");
 // Inicializar Pinecone DOS
-const pinecone2 = new Pinecone({apiKey: process.env.PINECONE_API_KEY2,});
-const pineconeIndex2 = pinecone2.index('rag-normativas-uagrm'); 
+const pinecone2 = new Pinecone({ apiKey: process.env.PINECONE_API_KEY2, });
+const pineconeIndex2 = pinecone2.index('rag-normativas-uagrm');
 console.log("Conectado y listo para usar el índice de Pinecone: 'rag-normativas-uagrm'.");
 
 const CONVERSION_SERVICE_URL = process.env.CONVERSION_SERVICE_URL;
@@ -100,13 +100,13 @@ app.post('/api/process-document', protect, upload, async (req, res) => {
     if (!req.files || req.files.length === 0 || !chatId || !documentType) {
         return res.status(400).json({ message: 'Faltan archivos, ID del chat o tipo de documento.' });
     }
-    
-    const allowedTypes = ['miscellaneous','chat','compatibilizacionFacultades','consolidadoFacultades','compatibilizacionAdministrativo','consolidadoAdministrativo','miscellaneous'];
+
+    const allowedTypes = ['miscellaneous', 'chat', 'compatibilizacionFacultades', 'consolidadoFacultades', 'compatibilizacionAdministrativo', 'consolidadoAdministrativo', 'miscellaneous'];
 
     if (!allowedTypes.includes(documentType)) {
         return res.status(400).json({ message: 'Tipo de documento inválido.' });
     }
-    
+
     try {
         // <-- 1. OBTENEMOS EL ESTADO DEL CHAT ANTES DEL BUCLE ---
         //    Necesitamos saber si estamos en modo superusuario.
@@ -126,7 +126,7 @@ app.post('/api/process-document', protect, upload, async (req, res) => {
             const sanitizedFilename = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
             const documentId = `doc_${chatId}_${Date.now()}_${sanitizedFilename}`;
             const chunks = chunkDocument(text);
-            
+
             const vectorsToUpsert = await Promise.all(
                 chunks.map(async (chunk, index) => ({
                     id: `${documentId}_chunk_${index}`,
@@ -134,30 +134,31 @@ app.post('/api/process-document', protect, upload, async (req, res) => {
                     metadata: { documentId, chunkText: chunk },
                 }))
             );
-            
+
             await pineconeIndex.upsert(vectorsToUpsert);
             console.log(`[Pinecone] Guardados ${vectorsToUpsert.length} chunks para ${file.originalname}.`);
 
-        // --- 2. LÓGICA DE GUARDADO SIMPLIFICADA ---
-        console.log(`Guardando ${file.originalname} en el contexto '${documentType}' del chat.`);
+            // --- 2. LÓGICA DE GUARDADO SIMPLIFICADA ---
+            console.log(`Guardando ${file.originalname} en el contexto '${documentType}' del chat.`);
 
-        const newDocumentData = { documentId, originalName: file.originalname, chunkCount: chunks.length };
-        const systemMessage = { sender: 'bot', text: `Archivo "${file.originalname}" procesado y añadido a '${documentType}'.` };
+            const newDocumentData = { documentId, originalName: file.originalname, chunkCount: chunks.length };
+            const systemMessage = { sender: 'bot', text: `Archivo "${file.originalname}" procesado y añadido a '${documentType}'.` };
 
-        await Chat.findByIdAndUpdate(chatId, {
-            $push: { 
-                [documentType]: newDocumentData,
-                messages: systemMessage
-            }
-        });   } 
-        
+            await Chat.findByIdAndUpdate(chatId, {
+                $push: {
+                    [documentType]: newDocumentData,
+                    messages: systemMessage
+                }
+            });
+        }
+
         // --- 3. RESPUESTA AL FRONTEND ---
         // Después de procesar todos los archivos, buscamos el estado final del chat y lo devolvemos
         const finalChatState = await Chat.findById(chatId);
         res.status(200).json({ updatedChat: finalChatState });
 
     } catch (error) {
-        console.error('[BACKEND] Error procesando múltiples documentos:', error); 
+        console.error('[BACKEND] Error procesando múltiples documentos:', error);
         res.status(500).json({ message: 'Error al procesar los archivos.', details: error.message });
     } finally {
         if (req.files && req.files.length > 0) {
@@ -173,7 +174,7 @@ app.post('/api/process-document', protect, upload, async (req, res) => {
 
 
 app.post('/api/chat-general', protect, async (req, res) => {
-    const { conversationHistory, chatId, useGlobalContext = true } = req.body; 
+    const { conversationHistory, chatId, useGlobalContext = true } = req.body;
 
     if (!chatId || !Array.isArray(conversationHistory)) {
         return res.status(400).json({ message: 'Datos inválidos.' });
@@ -186,7 +187,7 @@ app.post('/api/chat-general', protect, async (req, res) => {
         }
 
         const userQuery = conversationHistory[conversationHistory.length - 1].parts[0].text;
-        
+
 
 
         // --- LÓGICA DE CHAT NORMAL CON RAG ---
@@ -199,15 +200,15 @@ app.post('/api/chat-general', protect, async (req, res) => {
             const globalDocs = await GlobalDocument.find({});
             const globalDocumentIds = globalDocs.map(doc => doc.documentId);
             allSearchableIds = [...new Set([...chatDocumentIds, ...globalDocumentIds])];
-            } 
+        }
         else {
             console.log("[DEBUG] 'useGlobalContext' es false. Omitiendo documentos globales.");
-            }
-        
+        }
+
         console.log(`[DEBUG] Total de IDs únicos para la búsqueda en Pinecone:`, allSearchableIds);
 
-        
-         // Preparamos el historial de conversación original para enviarlo al modelo.
+
+        // Preparamos el historial de conversación original para enviarlo al modelo.
         let contents = conversationHistory.map(msg => ({
             role: msg.role,
             parts: msg.parts
@@ -215,16 +216,16 @@ app.post('/api/chat-general', protect, async (req, res) => {
 
         if (allSearchableIds.length > 0) {
             const queryEmbedding = await getEmbedding(userQuery);
-            const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, allSearchableIds,20);
+            const relevantChunks = await findRelevantChunksAcrossDocuments(queryEmbedding, allSearchableIds, 20);
             console.log(`[DEBUG] Se encontraron ${relevantChunks.length} chunks relevantes en Pinecone.`);
 
             if (relevantChunks.length > 0) {
-            const contextString = "Contexto relevante de los documentos:\n" + 
-                                  "-------------------------------------\n" +
-                                  relevantChunks.join("\n---\n") +
-                                  "\n-------------------------------------\n" +
-                                  "Por favor, basa tu respuesta en la pregunta del usuario y en el contexto proporcionado.";
-            contents.unshift({ role: 'user', parts: [{ text: contextString }] });
+                const contextString = "Contexto relevante de los documentos:\n" +
+                    "-------------------------------------\n" +
+                    relevantChunks.join("\n---\n") +
+                    "\n-------------------------------------\n" +
+                    "Por favor, basa tu respuesta en la pregunta del usuario y en el contexto proporcionado.";
+                contents.unshift({ role: 'user', parts: [{ text: contextString }] });
 
             }
         }
@@ -237,8 +238,8 @@ app.post('/api/chat-general', protect, async (req, res) => {
 
             // Enviamos la pregunta ORIGINAL del usuario como el último mensaje de la sesión.
             const result = await chatSession.sendMessage(userQuery);
-                const response = result.response;
-                botText = response.candidates[0].content.parts[0].text; 
+            const response = result.response;
+            botText = response.candidates[0].content.parts[0].text;
 
         } catch (geminiError) {
             console.error("Error con la API de Gemini:", geminiError);
@@ -248,10 +249,14 @@ app.post('/api/chat-general', protect, async (req, res) => {
 
         //Guardar en Base de Datos y Responder
         const updatedChat = await Chat.findByIdAndUpdate(chatId, {
-            $push: { messages: { $each: [
-                { sender: 'user', text: userQuery },
-                { sender: 'ai', text: botText }
-            ]}}
+            $push: {
+                messages: {
+                    $each: [
+                        { sender: 'user', text: userQuery },
+                        { sender: 'ai', text: botText }
+                    ]
+                }
+            }
         }, { new: true });
 
         res.status(200).json({ updatedChat });
@@ -302,9 +307,9 @@ app.post('/api/chat-normativas', protect, async (req, res) => {
             console.log('[Normativas Chat] === FIN DE CHUNKS RECUPERADOS ===');
 
             const contextString = "--- INICIO DEL CONTEXTO (Normativas UAGRM) ---\n" + relevantChunks.join("\n---\n") + "\n--- FIN DEL CONTEXTO ---";
-            
+
             const userQueryWithContext = `${contextString}\n\nBasándote **estrictamente** en el contexto anterior sobre las normativas de la UAGRM, responde a la siguiente pregunta: ${userQuery}`;
-            
+
             // LOG 5: Imprimir el prompt completo que se enviará al modelo.
             console.log('[Normativas Chat] Paso 5: === INICIO DEL PROMPT FINAL ENVIADO AL MODELO ===');
             // Imprimimos solo una parte para no duplicar toda la info en la consola.
@@ -329,7 +334,7 @@ app.post('/api/chat-normativas', protect, async (req, res) => {
         const updatedChat = await Chat.findByIdAndUpdate(chatId, {
             $push: { messages: { $each: [{ sender: 'user', text: userQuery }, { sender: 'ai', text: botText }] } }
         }, { new: true });
-        
+
         // LOG 7: Confirmar que el proceso finalizó y se guardó.
         console.log('[Normativas Chat] Paso 7: Conversación guardada en la base de datos exitosamente.');
 
