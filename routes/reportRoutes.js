@@ -13,11 +13,11 @@ const { processMultipleFilesAndFillForm } = require('../utils.js');
 // --- CONFIGURACIÓN DE MULTER ---
 // Lo configuramos para aceptar todos los posibles nombres de campo que usaremos.
 const upload = multer({ dest: 'uploads/' }).fields([
-    { name: 'form1File', maxCount: 20 },
-    { name: 'form2File', maxCount: 20 },
-    { name: 'form3File', maxCount: 20 },
-    { name: 'form4File', maxCount: 20 },
-    { name: 'compFile', maxCount: 20 } // Campo para el consolidado
+    { name: 'form1File', maxCount: 1 },
+    { name: 'form2File', maxCount: 50 },
+    { name: 'form3File', maxCount: 10 },
+    { name: 'form4File', maxCount: 25 },
+    { name: 'compFile', maxCount: 25 } // Campo para el consolidado
 ]);
 
 // --- INICIALIZACIÓN DE IA ---
