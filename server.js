@@ -52,7 +52,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Conexión a la Base de Datos
-mongoose.connect(process.env.MONGO_URI)
+mongoose.connect(process.env.MONGO_URI, {
+  serverSelectionTimeoutMS: 30000,   // Timeout para seleccionar servidor (30 segundos)
+  socketTimeoutMS: 45000,             // Timeout para operaciones de socket (45 segundos)
+  connectTimeoutMS: 30000             // Timeout para establecer conexión inicial (30 segundos)
+})
     .then(() => console.log('MongoDB conectado exitosamente.'))
     .catch(err => console.error('Error al conectar a MongoDB:', err));
 
